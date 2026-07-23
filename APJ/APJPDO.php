@@ -5,9 +5,12 @@
  * Version: 2.0.2412
  * Author: Ricardo Seiffert
  */
-namespace Libs\APJ;
-use Libs\APJ\APJLog;
-use Libs\APJ\APJPDOConnection;
+namespace APJ;
+use APJ\APJLog;
+use APJ\APJPDOConnection;
+use PDO;
+use PDOException;
+use DateTime;
 
 class APJPDO 
 {
@@ -15,7 +18,7 @@ class APJPDO
     private $_Qry;      
     private $_Settings;
     private $_Connected = false;
-    private $_Log;
+    private $_Log = null;
     private $_Parameters;
     private $_ACTION = ["insert", "replace", "update", "delete", "truncate"];
     private $_SELECTION = ["select", "show", "describe"];
@@ -34,18 +37,18 @@ class APJPDO
      * @param string|null $password (optional)
      * @param string|null $charset (optional)
      */
-    public function __construct(string $dsn = null, string $user = null, string $password = null, string $charset = null)
-    {           
-        $this->_Log = new APJLog(); 
+    public function __construct(?string $dsn = null, ?string $user = null, ?string $password = null, ?string $charset = null)
+    {
+        $this->_initializeLog();
         $this->connect($dsn, $user, $password, $charset);
         $this->clearBinding();
     }
-  
+
     public function __destruct() {
         $this->disconnect();
     }
-    
-    public function connect(string $dsn = null, string $user = null, string $password = null, string $charset = null): void
+
+    public function connect(?string $dsn = null, ?string $user = null, ?string $password = null, ?string $charset = null): void
     {
         if ($dsn === null) {
             $inifile = APJ . DIRECTORY_SEPARATOR . "APJPDO.ini.php";
@@ -54,10 +57,10 @@ class APJPDO
                 if ($this->_Settings) {
                     $dsn = 'mysql:dbname=' . $this->_Settings["dbname"] . ';host=' . $this->_Settings["host"] . ';charset=' . $this->_Settings['charset'];
                 } else {
-                    die($this->_errorLog("El archivo de DSN {$inifile} no se pudo leer."));
+                    die($this->_ErrorLog("El archivo de DSN {$inifile} no se pudo leer."));
                 }
             } else {
-                die($this->_errorLog("El archivo de DSN {$inifile} no está disponible. "));
+                die($this->_ErrorLog("El archivo de DSN {$inifile} no está disponible. "));
             }
         } else {
             $this->_Settings["user"] = $user;
@@ -69,10 +72,10 @@ class APJPDO
                 $this->_Pdo = APJPDOConnection::instance($dsn, $this->_Settings);
                 $this->_Connected = true;
             } else {
-                die($this->_errorLog("The PDO object is not available."));
+                die($this->_ErrorLog("The PDO object is not available."));
             }
         } catch (PDOException $e) {
-            die($this->_errorLog($e->getMessage()));
+            die($this->_ErrorLog($e->getMessage()));
         }
     }
   
@@ -92,7 +95,7 @@ class APJPDO
      * @param string $query Query string
      * @param array $parameters Parameters array
      */
-    private function _prepare(string $query, array $parameters = []): void
+    private function _prepare(string $query, ?array $parameters = null): void
     {
         if (!$this->_Connected) {
             $this->connect();
@@ -102,15 +105,17 @@ class APJPDO
             $this->bindArray($parameters);
             if (!empty($this->_Parameters)) {
                 foreach ($this->_Parameters as $param) {
-                    $param['value'] = (strlen($param['value']) == 0) ? null : $param['value'];
-                    $this->_Qry->bindParam($param['param'], $param['value']);
+                    $value = ($param['value'] === '' || $param['value'] === null) ? null : $param['value'];
+                    $this->_Qry->bindValue($param['param'], $value);
                 }
             }
-            $this->result = $this->_Qry->execute();     
+            $this->result = $this->_Qry->execute();
             $this->_setNoError();
-        } catch (PDOException $e) {
-            $this->_errorLog($e->getMessage(), $query);
-            $this->_setError();
+        } catch (\PDOException $e) {
+            try {
+                $this->_ErrorLog($e->getMessage(), $query);
+            } catch (\Throwable) { }
+            $this->_setError($e->getMessage());
         }
         $this->clearBinding();
     }
@@ -141,9 +146,9 @@ class APJPDO
      * Enlaza un array de datos a parámetros de una consulta
      * @param array $paramarray Array of parameters to be binded
      */
-    public function bindArray(array $paramarray): void
+    public function bindArray(?array $paramarray = []): void
     {
-        if (is_array($paramarray)) {
+        if (is_array($paramarray) and count($paramarray)) {
             $this->clearBinding();
             $columns = array_keys($paramarray);
             foreach ($columns as $column) {
@@ -169,7 +174,7 @@ class APJPDO
      * @param int $fetchmode Fetchmode, can be PDO::FETCH_ASSOC (default), PDO::FETCH_BOTH, PDO::FETCH_CLASS, PDO::FETCH_NUM
      * @return array|false Array or false
      */
-    public function rows(string $query, ?array $params = null, int $fetchmode = PDO::FETCH_ASSOC)
+    public function rows(string $query, $params = [], int $fetchmode = PDO::FETCH_ASSOC): array|false
     {
         $rows = [];
         $query = trim($query);
@@ -181,37 +186,7 @@ class APJPDO
                     $this->numrows = count($rows);
                     return $rows;
                 } catch (PDOException $e) {
-                    $this->_errorLog($e->getMessage());
-                    $this->_setError();
-                    $this->numrows = 0;
-                }
-            }
-        } 
-        return false;
-    }
-
-    /**
-     * Returns all rows from query into array<br>
-     * Devuelve todas las filas en un array
-     * @param string $query Query string
-     * @param array|null $params Binding parameters (optional)
-     * @param int $fetchmode Fetchmode, can be PDO::FETCH_ASSOC (default), PDO::FETCH_BOTH, PDO::FETCH_CLASS, PDO::FETCH_NUM
-     * @return array|false Array or false
-     */
-    public function rows(string $query, $params = null, int $fetchmode = PDO::FETCH_ASSOC)
-    {
-        $rows = [];
-        $query = trim($query);
-        $firstWord = strtolower(strtok($query, " "));
-        if (in_array($firstWord, $this->_SELECTION, true)) {
-            $this->_prepare($query, $params);
-            if ($this->error === false) {
-                try {
-                    $rows = $this->_Qry->fetchAll($fetchmode);
-                    $this->numrows = count($rows);
-                    return $rows;
-                } catch (PDOException $e) {
-                    $this->_errorLog($e->getMessage());
+                    $this->_ErrorLog($e->getMessage());
                     $this->_setError();
                     $this->numrows = 0;
                 }
@@ -222,30 +197,29 @@ class APJPDO
 
     /**
      * Returns a row from query into array<br>
-     * Devuelve todas las filas en un array
+     * Devuelve una fila en un array
      * @param string $query Query string
-     * @param array|null $params Binding parameters
+     * @param array|null $params Binding parameters (optional)
      * @param int $fetchMode Fetch mode, PDO::FETCH_ASSOC (default), PDO::FETCH_BOTH, PDO::FETCH_CLASS, PDO::FETCH_NUM
      * @return array|false Array or false
      */
-    public function row(string $query, $params = null, int $fetchMode = PDO::FETCH_ASSOC)
-    {        
+    public function row(string $query, $params = [], int $fetchMode = PDO::FETCH_ASSOC): array|false
+    {
         $query = trim($query);
-        $firstWord = strtolower(strtok($query, " "));
-        if (in_array($firstWord, $this->_SELECTION, true)) {
+        if (in_array($this->_first($query), $this->_SELECTION, true)) {
             $this->_prepare($query, $params);
             if ($this->error === false) {
                 try {
                     return $this->_Qry->fetch($fetchMode);
                 } catch (PDOException $e) {
-                    $this->_errorLog($e->getMessage());
+                    $this->_ErrorLog($e->getMessage());
                     $this->_setError();
                 }
             }
         }
-        return false;      
+        return false;
     }
-
+    
     /**
      * Execute a query binding parameters<br>
      * Ejecuta una consulta enlazando parámetros
@@ -253,7 +227,7 @@ class APJPDO
      * @param array|null $params Binding parameters (optional)
      * @return int|false Number of affected rows or false if not an ACTION query
      */
-    public function execute(string $query, $params = null)
+    public function execute(string $query, $params = null): int|false
     {
         $query = trim($query);
         $firstWord = strtolower(strtok($query, " "));
@@ -263,7 +237,7 @@ class APJPDO
                 try {
                     return $this->affected = $this->_Qry->rowCount();
                 } catch (PDOException $e) {
-                    $this->_errorLog($e->getMessage());
+                    $this->_ErrorLog($e->getMessage());
                     $this->_setError();
                 }
             }
@@ -277,13 +251,13 @@ class APJPDO
      * @param int $fetchmode Fetch mode, PDO::FETCH_ASSOC (default), PDO::FETCH_BOTH, PDO::FETCH_CLASS, PDO::FETCH_NUM
      * @return array|false Array or false
      */
-    public function nextRow(int $fetchmode = PDO::FETCH_ASSOC)
+    public function nextRow(int $fetchmode = PDO::FETCH_ASSOC): array|false
     {        
         if ($this->error === false) {
             try {
                 return $this->_Qry->fetch($fetchmode);      
             } catch (PDOException $e) {
-                $this->_errorLog($e->getMessage());
+                $this->_ErrorLog($e->getMessage());
                 $this->_setError();
             }
         }
@@ -296,27 +270,21 @@ class APJPDO
      * @param string $query Query string
      * @return mixed Number of result rows or affected rows or false if error
      */
-    public function query(string $query)
+    public function query(string $query): int|false
     {
         $query = trim($query);
-        $this->_Qry = $this->_Pdo->query($query);
-        if ($this->error === false) {
+        try {
+            $this->_setNoError();
+            $this->_Qry = $this->_Pdo->query($query);
             $firstWord = strtolower(strtok($query, " "));
             if (in_array($firstWord, $this->_ACTION, true)) {
-                try {
-                    return $this->affected = $this->_Qry->rowCount();
-                } catch (PDOException $e) {
-                    $this->_errorLog($e->getMessage());
-                    $this->_setError();
-                }
+                return $this->affected = $this->_Qry->rowCount();
             } else {
-                try {
-                    return $this->numrows = $this->_Qry->rowCount();
-                } catch (PDOException $e) {
-                    $this->_errorLog($e->getMessage());
-                    $this->_setError();
-                }
+                return $this->numrows = $this->_Qry->rowCount();
             }
+        } catch (PDOException $e) {
+            $this->_ErrorLog($e->getMessage(), $query);
+            $this->_setError();
         }
         return false;
     }
@@ -326,12 +294,12 @@ class APJPDO
      * Devuelve la última clave promaria insertada
      * @return mixed Last id
      */
-    public function lastId()
+    public function lastId(): int|false
     {
         try {
             return $this->_Pdo->lastInsertId();
         } catch (PDOException $e) {
-            $this->_errorLog($e->getMessage());
+            $this->_ErrorLog($e->getMessage());
             $this->_setError();
         }
         return false;      
@@ -349,7 +317,7 @@ class APJPDO
             $this->trans = true;
             return true;
         } catch (PDOException $e) {
-            $this->_errorLog($e->getMessage());
+            $this->_ErrorLog($e->getMessage());
             $this->_setError();
         }
         return false;
@@ -368,7 +336,7 @@ class APJPDO
                 $this->trans = false;
                 return true;
             } catch (PDOException $e) {
-                $this->_errorLog($e->getMessage());
+                $this->_ErrorLog($e->getMessage());
                 $this->_setError();
             }
         }
@@ -388,7 +356,7 @@ class APJPDO
                 $this->trans = false;
                 return true;
             } catch (PDOException $e) {
-                $this->_errorLog($e->getMessage());
+                $this->_ErrorLog($e->getMessage());
                 $this->_setError();
             }
         }
@@ -415,13 +383,21 @@ class APJPDO
     }
 
     /**
-     * Error logging<br>
-     * Registro de Errores
+    * Instance of APJLog for local Error Logging
+    * 
+    */
+    private function _initializeLog():void 
+    {
+        $this->_Log = new APJLog();        
+    }
+
+    /**
+     * Local error logging method
      * @param string $message Message
      * @param string $sql Query string (optional)
      * @return string Exception message
      */
-    private function _errorLog(string $message, string $sql = ""): string
+    private function _ErrorLog(string $message, string $sql = ""): string
     {
         $exception = 'Excepción no manejada<br>';
         $exception .= $message;
@@ -429,10 +405,65 @@ class APJPDO
         if (!empty($sql)) {
             $message .= "\r\nSQL : " . $sql;
         }
-        $this->_Log->write($message);
+        $this->_Log->errorLog($message);
         return $exception;
     }
 
+    /**
+    * Converts a value according to given data type<br>
+    * Convierte un valor según el tipo de dato dado
+    * @param (mixed) Value
+    * @param (string) data type
+    * @param (boolean) Trims the value (optional)
+    * @return (mixed) New converted value
+    */
+    public function getValue($value,string $type='none',bool $trim=false): mixed 
+    {
+        $newValue=($trim)?trim($value):$value;
+        $type=strtolower($type);
+        switch ($type) {
+            case "text":
+            case "varchar":
+            case "char":
+            case "blob":
+            case "binary":
+            case "varbinary":
+            case "numeric":
+            case "decimal":
+            case "enum":
+            case "set":
+                $newValue = (strlen($newValue ?? '')>0) ? $newValue : NULL;
+                break;
+            case "float":
+            case "double":
+            case "real":
+                $newValue = (strlen($newValue ?? '')>0) ? floatval($newValue) : NULL;
+                break;
+            case "date":
+                $newValue = ($newValue !== '' && $newValue !== null) ? (new DateTime($newValue))->format('Y-m-d') : null;
+                break;
+            case "timestamp":
+            case "datetime":
+                $newValue = ($newValue !== '' && $newValue !== null) ? (new DateTime($newValue))->format('Y-m-d H:i:s') : null;
+                break;
+            case "time":
+                $newValue = ($newValue !== '' && $newValue !== null) ? (new DateTime($newValue))->format('H:i:s') : null;
+                break;
+            case "bit":
+            case "tinyint":
+            case "smallint":
+            case "mediumint":
+            case "int":
+            case "bigint":
+            case "year":
+                $newValue = ($newValue !== '' && $newValue !== null) ? intval($newValue) : null;
+                break;
+            default:
+                $newValue = ($newValue !== '' && $newValue !== null) ? $newValue : null;
+        }
+        return $newValue;
+    }
+    
     /**
      * Returns the first query instruction<br>
      * Devuelve la primera instrucción de la consulta
@@ -441,8 +472,8 @@ class APJPDO
      */
     private function _first(string $query): string
     {
-        $query = str_replace("\r\n", ' ', $query);
-        $array = explode(" ", $query);
+        $query = preg_replace('/\s+/', ' ', $query);
+        $array = explode(" ", trim($query));
         return strtolower($array[0]);
     }
 
@@ -476,4 +507,27 @@ class APJPDO
     {
         return $this->_Settings['dbname'];
     }
+    
+    /**
+    * Set errors properties
+    * 
+    */
+    private function _setError(string $msg = ''): void
+    {
+        $this->error = true;
+        $this->errornum = $this->_Pdo->errorCode();
+        $this->errormsg = $msg ?: implode(' | ', array_filter((array) $this->_Pdo->errorInfo()));
+    }
+
+    /**
+    * Initializes errors properties
+    * 
+    */
+    private function _setNoError(): void 
+    {
+        $this->error = false;
+        $this->errornum = 0;
+        $this->errormsg = NULL;
+    }
+
 }

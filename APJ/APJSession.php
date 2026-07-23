@@ -5,7 +5,10 @@
  * Version: 2.0.2412
  * Author: Ricardo Seiffert
  */
-namespace Libs\APJ;
+namespace APJ;
+
+use LogicException;
+use PDO;
 
 class APJSession
 {
@@ -18,9 +21,9 @@ class APJSession
     /**
     * Model or callback method
     * Método del modelo o callback
-    * @var object
+    * @var string|null
     */
-    private static $sessionTokenMethod = null; 
+    private static $sessionTokenMethod = null;
     /**
     * PDO object for direct validation
     * Objeto PDO para validación directa
@@ -37,8 +40,42 @@ class APJSession
     public static function active(string $name): bool
     {
         self::setName($name);
-        session_start();
-        return self::same();
+        $limit = defined('SESSION_LIMIT') ? SESSION_LIMIT : 1440;
+        $serverName = $_SERVER['SERVER_NAME'] ?? '';
+        $domain = str_contains($serverName, '.') ? $serverName : '';
+        $isHttps = isset($_SERVER['HTTPS']) || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
+        if (session_status() != PHP_SESSION_ACTIVE) {
+            session_set_cookie_params([
+                'lifetime' => $limit,
+                'path'     => '/',
+                'domain'   => $domain,
+                'secure'   => $isHttps,
+                'httponly' => true,
+                'samesite' => 'Strict',
+            ]);
+            ini_set('session.gc_maxlifetime', $limit);
+            ini_set('session.cookie_lifetime', $limit);
+            session_start();
+        }
+        if (!self::same()) {
+            return false;
+        }
+        // Activity-based timeout: expire if idle more than SESSION_LIMIT seconds
+        if (isset($_SESSION['last_activity']) && (time() - $_SESSION['last_activity']) > $limit) {
+            self::destroy();
+            return false;
+        }
+        // Renew activity timestamp and refresh browser cookie on every request
+        $_SESSION['last_activity'] = time();
+        setcookie(session_name(), session_id(), [
+            'expires'  => time() + $limit,
+            'path'     => '/',
+            'domain'   => $domain,
+            'secure'   => $isHttps,
+            'httponly' => true,
+            'samesite' => 'Strict',
+        ]);
+        return true;
     }
 
     /**
@@ -50,27 +87,29 @@ class APJSession
      * @param string|null $domain Session domain (optional)
      * @param bool|null $secure Session uses security (optional)
      */
-    public static function start(string $name, int $limit = 0, string $path = null, string $domain = null, bool $secure = null): void
+    public static function start(string $name, int $limit = 0, ?string $path = null, ?string $domain = null, ?bool $secure = null): void
     {
-        self::setName($name);
-        $domain = $domain ?? $_SERVER['SERVER_NAME'];
-        $https = $secure ?? isset($_SERVER['HTTPS']);
-        session_set_cookie_params([
-            'lifetime' => $limit,
-            'path' => $path ?? '/',
-            'domain' => $domain,
-            'secure' => $https,
-            'httponly' => true,
-            'samesite' => 'Strict'
-        ]);
-
-        ini_set('session.gc_maxlifetime', $limit);
-        ini_set('session.cookie_lifetime', $limit);
-
         if (session_status() != PHP_SESSION_ACTIVE) {
+            if ($limit == 0) {
+                $limit = SESSION_LIMIT;
+            }
+            self::setName($name);
+            $serverName = $_SERVER['SERVER_NAME'] ?? '';
+            $domain = $domain ?? (str_contains($serverName, '.') ? $serverName : '');
+            $isHttps = isset($_SERVER['HTTPS']) || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
+            $https = $secure ?? $isHttps;
+            session_set_cookie_params([
+                'lifetime' => $limit,
+                'path'     => $path ?? '/',
+                'domain'   => $domain,
+                'secure'   => $https,
+                'httponly' => true,
+                'samesite' => 'Strict',
+            ]);
+            ini_set('session.gc_maxlifetime', $limit);
+            ini_set('session.cookie_lifetime', $limit);
             session_start();
         }
-
         if (self::validate()) {
             if (!self::same()) {
                 self::regenerate();
@@ -85,14 +124,14 @@ class APJSession
     }
 
     /**
-     * Set hashed session name (sha256)<br>
+     * Set hashed session name (md5)<br>
      * Define el nombre de la sesión codificada (md5)
      * @param string $name Starting session name
      */    
     private static function setName(string $name): void
     {
         if (session_status() != PHP_SESSION_ACTIVE) {
-            $hashname = hash('sha256', $name . '_Session');
+            $hashname = md5($name . '_Session');
             session_name($hashname);
         }
     }
@@ -103,8 +142,9 @@ class APJSession
      */
     private static function basicData(): void
     {
-        $_SESSION['IPaddress'] = hash('sha256', $_SERVER['REMOTE_ADDR']);
-        $_SESSION['userAgent'] = hash('sha256', $_SERVER['HTTP_USER_AGENT']);
+        $_SESSION['IPaddress'] = md5($_SERVER['REMOTE_ADDR']);
+        $_SESSION['userAgent'] = md5($_SERVER['HTTP_USER_AGENT']);
+        $_SESSION['last_activity'] = time();
     }
 
     /**
@@ -115,8 +155,8 @@ class APJSession
     private static function same(): bool
     {
         return isset($_SESSION['IPaddress'], $_SESSION['userAgent']) &&
-            $_SESSION['IPaddress'] === hash('sha256', $_SERVER['REMOTE_ADDR']) &&
-            $_SESSION['userAgent'] === hash('sha256', $_SERVER['HTTP_USER_AGENT']);
+            $_SESSION['IPaddress'] === md5($_SERVER['REMOTE_ADDR']) &&
+            $_SESSION['userAgent'] === md5($_SERVER['HTTP_USER_AGENT']);
     }
 
     /**
@@ -136,21 +176,7 @@ class APJSession
      */
     private static function regenerate(): void
     {
-        if (!empty($_SESSION['OBSOLETE'])) {
-            return;
-        }
-
-        $_SESSION['OBSOLETE'] = true;
-        $_SESSION['EXPIRES'] = time() + 10;
-
         session_regenerate_id(true);
-
-        $newSession = session_id();
-        session_write_close();
-
-        session_id($newSession);
-        session_start();
-
         unset($_SESSION['OBSOLETE'], $_SESSION['EXPIRES']);
     }
 
@@ -170,13 +196,7 @@ class APJSession
      */
     public static function destroySession(): void
     {
-        // Limpia todas las variables locales
         $_SESSION = [];
-
-        // Limpia las variables de sesión registradas en el servidor
-        session_unset();
-
-        // Destruye la sesión en el servidor
         session_destroy();
     }
 
@@ -188,16 +208,14 @@ class APJSession
     {
         if (ini_get("session.use_cookies")) {
             $params = session_get_cookie_params();
-            setcookie(
-                session_name(),
-                '',
-                time() - 42000, // Fecha en el pasado para invalidar
-                $params["path"],
-                $params["domain"],
-                $params["secure"],
-                $params["httponly"],
-                $params['samesite']
-            );
+            setcookie(session_name(), '', [
+                'expires'  => time() - 42000,
+                'path'     => $params['path'],
+                'domain'   => $params['domain'],
+                'secure'   => $params['secure'],
+                'httponly' => $params['httponly'],
+                'samesite' => $params['samesite'],
+            ]);
         }
     }
         
@@ -210,14 +228,14 @@ class APJSession
      */
     public static function setLoginCookie(string $systemName, string $token, int $days = 30): void
     {
-        $cookieName = $systemName . '_login_token'; // Nombre paramétrico
-        setcookie($cookieName, $to0ken, [
-            'expires' => time() + ($days * 86400),
-            'path' => '/',
-            'domain' => $_SERVER['SERVER_NAME'],
-            'secure' => isset($_SERVER['HTTPS']), // Solo HTTPS si está disponible
-            'httponly' => true, // Evita acceso desde JavaScript
-            'samesite' => 'Strict' // Ayuda contra CSRF (usar 'Lax' si es necesario compartir entre subdominios).
+        $cookieName = $systemName . '_login_token';
+        setcookie($cookieName, $token, [
+            'expires'  => time() + ($days * 86400),
+            'path'     => '/',
+            'domain'   => $_SERVER['SERVER_NAME'],
+            'secure'   => isset($_SERVER['HTTPS']),
+            'httponly' => true,
+            'samesite' => 'Strict',
         ]);
     }
 
@@ -229,16 +247,13 @@ class APJSession
      */
     public static function verifyLoginCookie(string $systemName): ?string
     {
-        $cookieName = $systemName . '_login_token'; // Nombre paramétrico
+        $cookieName = $systemName . '_login_token';
 
         if (!isset($_COOKIE[$cookieName])) {
-            return null; // No existe la cookie
+            return null;
         }
 
         $token = $_COOKIE[$cookieName];
-
-        // Aquí verificas el token en la base de datos:
-        // Ejemplo:
         $isValid = self::validateToken($token);
 
         return $isValid ? $token : null;
@@ -251,10 +266,16 @@ class APJSession
      */
     public static function deleteRememberMeCookies(string $systemName): void
     {
-        $cookieName = $systemName . '_login_token'; // Nombre paramétrico
-        setcookie($cookieName, '', time() - 3600, '/');
-        $cookieName = $systemName . '_user_id'; // Nombre paramétrico
-        setcookie($cookieName, '', time() - 3600, '/', '', false, true);
+        $options = [
+            'expires'  => time() - 3600,
+            'path'     => '/',
+            'domain'   => $_SERVER['SERVER_NAME'],
+            'secure'   => isset($_SERVER['HTTPS']),
+            'httponly' => true,
+            'samesite' => 'Strict',
+        ];
+        setcookie($systemName . '_login_token', '', $options);
+        setcookie($systemName . '_user_id', '', $options);
     }
 
      /**
@@ -292,7 +313,6 @@ class APJSession
      */
     public static function validateToken(string $token): bool
     {
-        // Validar usando el modelo y método definidos
         if (self::$sessionTokenModel && self::$sessionTokenMethod) {
             $model = self::$sessionTokenModel;
             $method = self::$sessionTokenMethod;
@@ -304,15 +324,12 @@ class APJSession
             }
         }
 
-        // Validar usando PDO directamente
         if (self::$pdo) {
             $stmt = self::$pdo->prepare('SELECT COUNT(*) FROM session_tokens WHERE token = :token AND expiry > NOW()');
             $stmt->execute([':token' => $token]);
             return $stmt->fetchColumn() > 0;
         }
 
-        // Si no hay configuración válida, lanzar excepción
         throw new LogicException('No se ha configurado un modelo o instancia PDO para la validación de tokens.');
     }
 }
-?>

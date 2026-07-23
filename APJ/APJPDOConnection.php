@@ -7,26 +7,26 @@
  * Version: 2.0.2412
  * Author: Ricardo Seiffert
  */
-namespace Libs\APJ;
+namespace APJ;
+use \PDO;
+use \PDOException;
+use \Exception;
 
 class APJPDOConnection
 {
-    private static $_instance = null;
-    private static $_dsn = null;
-    private static $_settings = [];
+    private static PDO|null $_instance = null;
+    private static string|null $_dsn = null;
+    private static array $_settings = [];
 
-    public function __construct() {}
+    private function __construct() {}
 
-    private function __destruct(){}
+    private function __destruct() {}
 
-    public function __clone()
+    private function __clone(): void {}
+
+    public function __wakeup(): void
     {
-        return false;
-    }
-
-    public function __wakeup()
-    {
-        return false;
+        throw new \Exception('Cannot unserialize singleton');
     }  
 
     /**
@@ -55,12 +55,11 @@ class APJPDOConnection
     private static function getConnection(string $dsn, array $settings): PDO
     {
         try {
-            $conn = new PDO($dsn, $settings["user"], $settings["password"], [PDO::ATTR_PERSISTENT => PERSISTENT_CONNECTION]);
-            if (isset($settings['charset'])) {
-                $conn->setAttribute(PDO::MYSQL_ATTR_INIT_COMMAND, 'SET NAMES ' . $settings['charset']);
-            }
-            $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-            $conn->setAttribute(PDO::ATTR_EMULATE_PREPARES, EMULATE_PREPARES);
+            $conn = new PDO($dsn, $settings["user"], $settings["password"], [
+                PDO::ATTR_PERSISTENT      => PERSISTENT_CONNECTION,
+                PDO::ATTR_ERRMODE         => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_EMULATE_PREPARES => EMULATE_PREPARES,
+            ]);
             return $conn;
         } catch (PDOException $e) {
             throw new Exception("PDOException: " . $e->getMessage());

@@ -5,7 +5,8 @@
 * Version: 2.0.2412
 * Author: Ricardo Seiffert
 */
-namespace Libs\APJ;
+namespace APJ;
+use Exception;
 
 class Autoload {
     /**
@@ -22,12 +23,11 @@ class Autoload {
     * función de autocarga de clases
     * 
     * @param mixed $class Clase a cargar
-    * @return mixed
     */
     public static function autoload($class): void {
         // Convertir namespace a la ruta del archivo
         $prefixes = [
-            'Libs\\' => LIBS . '/',
+            'APJ\\' => APJ . '/',
             'Models\\' => MODELS . '/',
             'Helpers\\' => HELPERS . '/',
             'Controllers\\' => CONTROLLERS . '/'
@@ -37,13 +37,13 @@ class Autoload {
             $len = strlen($prefix);
             if (strncmp($prefix, $class, $len) === 0) {
                 $relativeClass = substr($class, $len);
-                $file = $baseDir . str_replace('\\', '/', $relativeClass) . '.php';
-
-                if (file_exists($file)) {
-                    require $file;
+                $filePath = $baseDir . str_replace('\\', '/', $relativeClass) . '.php';
+                $file = realpath($filePath);
+                if ($file && file_exists($file)) {
+                    require_once $file;
                     return;
                 } else {
-                    throw new \Exception("El archivo {$file} no está disponible.");
+                    throw new Exception("El archivo {$filePath} no está disponible.");
                 }
             }
         }

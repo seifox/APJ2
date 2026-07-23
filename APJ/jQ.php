@@ -5,8 +5,8 @@
  * Version: 2.0.2412
  * Author: Ricardo Seiffert
  */
-namespace Libs\APJ;
-use Libs\APJ\jQAction;
+namespace APJ;
+use APJ\jQAction;
 
 class jQ
 {
@@ -82,7 +82,16 @@ class jQ
     public static function getResponse(): void
     {
         self::init();
-        echo json_encode(self::$jQ->response);
+        if (ob_get_level() > 0) { ob_end_clean(); }
+        header('Content-Type: application/json; charset=UTF-8');
+        $json = json_encode(self::$jQ->response, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        if ($json === false) {
+            $json = json_encode([
+                'action' => ['jError' => [['msg' => 'Error de serialización: ' . json_last_error_msg()]]],
+                'query'  => []
+            ]);
+        }
+        echo $json;
         exit;
     }
 
@@ -130,7 +139,7 @@ class jQ
      * @param array|null $params Array of callback parameters (optional)
      * @return jQ
      */
-    public static function jInfo(string $msg, ?string $title = null, ?string $callBack = null, ?array $params = null): self
+    public static function jInfo(string $msg, ?string $title = null, ?string $callBack = null, ?array $params = []): self
     {
         return self::_jAlert(__FUNCTION__, $msg, $title, $callBack, $params, null);
     }
@@ -144,7 +153,7 @@ class jQ
      * @param array|null $params Array of callback parameters (optional)
      * @return jQ
      */
-    public static function jWarning(string $msg, ?string $title = null, ?string $callBack = null, ?array $params = null): self
+    public static function jWarning(string $msg, ?string $title = null, ?string $callBack = null, ?array $params = []): self
     {
         return self::_jAlert(__FUNCTION__, $msg, $title, $callBack, $params, null);
     }
@@ -158,7 +167,7 @@ class jQ
      * @param array|null $params Array of callback parameters (optional)
      * @return jQ
      */
-    public static function jError(string $msg, ?string $title = null, ?string $callBack = null, ?array $params = null): self
+    public static function jError(string $msg, ?string $title = null, ?string $callBack = null, ?array $params = []): self
     {
         return self::_jAlert(__FUNCTION__, $msg, $title, $callBack, $params, null);
     }
@@ -172,7 +181,7 @@ class jQ
      * @param array|null $params Array of callback parameters (optional)
      * @return jQ
      */
-    public static function jConfirm(string $msg, ?string $title = null, ?string $callBack = null, ?array $params = null): self
+    public static function jConfirm(string $msg, ?string $title = null, ?string $callBack = null, ?array $params = []): self
     {
         return self::_jAlert(__FUNCTION__, $msg, $title, $callBack, $params, null);
     }
@@ -203,7 +212,7 @@ class jQ
         return self::_jAlert(__FUNCTION__, $msg, $title, null, null, $style);
     }
 
-    private static function _jAlert(string $function, string $msg, ?string $title = null, ?string $callBack = null, ?array $params = null, ?string $style = null): self
+    private static function _jAlert(string $function, string $msg, ?string $title = null, ?string $callBack = null, ?array $params = [], ?string $style = null): self
     {
         self::init();
         $jQAction = new jQAction();
@@ -231,7 +240,8 @@ class jQ
      */
     public static function jClose(): self
     {
-        self::setAction(__FUNCTION__, null);
+        $jQAction = new jQAction();
+        self::setAction(__FUNCTION__, $jQAction);
         return self::$jQ;
     }
 }

@@ -1,0 +1,2 @@
+AddHandler application/x-httpd-php83 .php
+Action application/x-httpd-php83 "E:/php83/php-cgi.exe"

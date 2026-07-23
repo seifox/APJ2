@@ -2,15 +2,20 @@
 /**
  * APJ's parent Controller
  * Controlador padre de APJ
- * Version: 2.0.2412
+ * Version: 2.0.2511
  * Author: Ricardo Seiffert
  */
-namespace Libs\APJ;
-use Libs\APJ\jQSelector;
-use Libs\APJ\jQ;
+namespace APJ;
+use APJ\jQSelector;
+use APJ\jQ;
+use APJ\APJLog;
+use \stdClass;
+use \ReflectionClass;
+use \Exception;
 
 class APJController
 {
+    
     /**
      * Can render<br>
      * Puede renderizar
@@ -76,7 +81,14 @@ class APJController
      * @var bool
      */
     protected $useParametersAsArray = false;
-
+    
+    /**
+    * Error logging object
+    * 
+    * @var object
+    */
+    private $_Log = null;
+    
     // Common methods Trait
     use APJCommon;
 
@@ -84,8 +96,10 @@ class APJController
      * Constructor
      * @param string $page Rendered view
      */
-    public function __construct(string $page = '')
+    public function __construct(?string $page = '')
     {
+        ob_start();
+        $this->_initializeLog();
         $method = $_POST['action'] ?? null;
         $data = $_POST['data'] ?? $_POST;
         $this->_unsetAction();
@@ -93,7 +107,12 @@ class APJController
             if (method_exists($this, $method)) {
                 $data = $this->_isJson($data);
                 $this->getForm();
-                $this->{$method}($data);
+                try {
+                    $this->{$method}($data);
+                } catch (\Throwable $e) {
+                    $this->_ErrorLog("Excepción no manejada en {$method}: " . $e->getMessage());
+                    $this->jError("Error interno del servidor.");
+                }
                 $this->getResponse();
             } else {
                 $this->jError("El método {$method} no existe!");
@@ -116,7 +135,8 @@ class APJController
             $url = VIEWS . DIRECTORY_SEPARATOR . $page;
             $html = $this->_getContent($url);
             if ($html) {
-                $replace = '<head><base href="' . ROOTURL . '/">';
+                $root=(ROOTURL=='/')?'':ROOTURL;
+                $replace = '<head><base href="' . $root . '/">';
                 $html = str_replace('<head>', $replace, $html);
                 if ($return) {
                     return $html;
@@ -137,9 +157,10 @@ class APJController
 
     /**
      * Controls session<br>
-     * Control de sesión
+     * Control de sesi?n
+     * @param bool $controllerControl controls access to the controller (default = true)
      */
-    protected function sessionControl()
+    protected function sessionControl(bool $controllerControl = true)
     {
         try {
             if (!APJSession::active(APPNAME)) {
@@ -149,13 +170,15 @@ class APJController
             if (!isset($_SESSION['id']) || !isset($_SESSION['IPaddress']) || !isset($_SESSION['userAgent'])) {
                 $this->redirect(LOGIN, true);
             }
-            $app = hash('sha256', $this->getController());
-            if (in_array($app, $_SESSION['app'], true) === false) {
-                $this->redirect(LOGIN, true);
+            if ($controllerControl) {
+              $app = md5($this->getController());
+              if (empty($_SESSION['app']) || !in_array($app, $_SESSION['app'], true)) {
+                  $this->redirect(LOGIN, true);
+              }
             }
             $this->userId = $_SESSION['id'];
         } catch (Exception $e) {
-            error_log("Error in sessionControl: " . $e->getMessage());
+            $this->_ErrorLog("Error in sessionControl: " . $e->getMessage());
             $this->redirect(LOGIN, true);
         }
     }
@@ -206,7 +229,7 @@ class APJController
                 }
             }
         } catch (Exception $e) {
-            error_log("Error in formToModel: " . $e->getMessage());
+            $this->_ErrorLog("Error in formToModel: " . $e->getMessage());
         }
     }
 
@@ -225,7 +248,7 @@ class APJController
                 }
             }
         } catch (Exception $e) {
-            error_log("Error in formObjectToModel: " . $e->getMessage());
+            $this->_ErrorLog("Error in formObjectToModel: " . $e->getMessage());
         }
     }
 
@@ -243,7 +266,7 @@ class APJController
                 $this->Form->$name = $model->$name;
             }
         } catch (Exception $e) {
-            error_log("Error in modelToForm: " . $e->getMessage());
+            $this->_ErrorLog("Error in modelToForm: " . $e->getMessage());
         }
     }
   
@@ -260,7 +283,7 @@ class APJController
                 $this->Form->$name = $value;
             }
         } catch (Exception $e) {
-            error_log("Error in arrayToForm: " . $e->getMessage());
+            $this->_ErrorLog("Error in arrayToForm: " . $e->getMessage());
         }
     }
 
@@ -273,7 +296,7 @@ class APJController
         try {
             unset($this->Form);
         } catch (Exception $e) {
-            error_log("Error in clearForm: " . $e->getMessage());
+            $this->_ErrorLog("Error in clearForm: " . $e->getMessage());
         }
     }
 
@@ -288,7 +311,7 @@ class APJController
                 $this->Form = new stdClass();
             }
         } catch (Exception $e) {
-            error_log("Error in createForm: " . $e->getMessage());
+            $this->_ErrorLog("Error in createForm: " . $e->getMessage());
         }
     }
   
@@ -316,6 +339,8 @@ class APJController
                 } elseif ($this->fieldTypes[$field] !== 'file') {
                     $this->jQ($selector)->val($value);
                 }
+            } else {
+                $this->jQ($selector)->val($value);
             }
         }
     }
@@ -340,7 +365,7 @@ class APJController
      */
     protected function selector(string $field, ?string $form = null): string
     {
-        if ($form) {
+        if (isset($form)) {
             $sel = "#{$form} :input[name={$field}]";
         } else {
             $sel = "#{$field}";
@@ -387,7 +412,7 @@ class APJController
                 }
             }
         } catch (Exception $e) {
-            error_log("Error in _APJCall: " . $e->getMessage());
+            $this->_ErrorLog("Error in _APJCall: " . $e->getMessage());
             return null;
         }
         return null;
@@ -408,7 +433,7 @@ class APJController
             }
             return $html;
         } catch (Exception $e) {
-            error_log("Error in _getContent: " . $e->getMessage());
+            $this->_ErrorLog("Error in _getContent: " . $e->getMessage());
             return null;
         }
     }
@@ -428,7 +453,7 @@ class APJController
                 return null;
             }
         } catch (Exception $e) {
-            error_log("Error in getLocalContent: " . $e->getMessage());
+            $this->_ErrorLog("Error in getLocalContent: " . $e->getMessage());
             return null;
         }
     }
@@ -447,7 +472,7 @@ class APJController
         try {
             return file_get_contents($url);
         } catch (Exception $e) {
-            error_log("Error in getContent: " . $e->getMessage());
+            $this->_ErrorLog("Error in getContent: " . $e->getMessage());
             return null;
         }
     }
@@ -501,7 +526,7 @@ class APJController
                 $startPos += $len;
             }
         } catch (Exception $e) {
-            error_log("Error in _ApjReplace: " . $e->getMessage());
+            $this->_ErrorLog("Error in _ApjReplace: " . $e->getMessage());
         }
         return $html;
     }
@@ -512,12 +537,13 @@ class APJController
      * @param array $array Array of elements
      * @param string $valueIndex Value index name
      * @param string $textIndex Item index name
-     * @param string $selected Default selected item value (optional)
+     * @param string|array $selected Default selected item value, or array of values for multi-select (optional)
      * @return string <options>
      */
-    protected function options(array $array, string $valueIndex, string $textIndex, string $selected = ''): string
+    protected function options(array $array, string $valueIndex, string $textIndex, string|array|null $selected = ''): string
     {
         $options = '';
+        $selected = $selected ?? '';
         try {
             if (is_array($array) && strlen($valueIndex) > 0 && strlen($textIndex) > 0) {
                 foreach ($array as $row) {
@@ -533,9 +559,20 @@ class APJController
                 }
             }
         } catch (Exception $e) {
-            error_log("Error in options: " . $e->getMessage());
+            $this->_ErrorLog("Error in options: " . $e->getMessage());
         }
         return $options;
+    }
+    
+    /**
+    * Check if the current file is the one to be executed directly
+    * Comprueba si el archivo actual es el que se ejecuta directamente
+    * @param string $file
+    * @return bool
+    */
+    public static function executeLocally(string $file): bool
+    {
+        return isEntryPoint($file);
     }
     
     /**
@@ -549,7 +586,18 @@ class APJController
             $obj = new ReflectionClass($this);
             return $this->_self = basename($obj->getFileName());
         } catch (Exception $e) {
-            error_log("Error in self: " . $e->getMessage());
+            $this->_ErrorLog("Error in self: " . $e->getMessage());
+            return '';
+        }
+    }
+
+    protected function classBasename(): string
+    {
+        try {
+            $obj = new ReflectionClass($this);
+            return basename($obj->getFileName());
+        } catch (Exception $e) {
+            $this->_ErrorLog("Error in classBasename: " . $e->getMessage());
             return '';
         }
     }
@@ -565,7 +613,7 @@ class APJController
             $file = $this->self();
             return substr($file, 0, -4);
         } catch (Exception $e) {
-            error_log("Error in getController: " . $e->getMessage());
+            $this->_ErrorLog("Error in getController: " . $e->getMessage());
             return '';
         }
     }
@@ -590,7 +638,7 @@ class APJController
                 return $pagedArray[$page - 1] ?? [];
             }
         } catch (Exception $e) {
-            error_log("Error in paging: " . $e->getMessage());
+            $this->_ErrorLog("Error in paging: " . $e->getMessage());
             return false;
         }
         return false;
@@ -608,6 +656,20 @@ class APJController
     }
 
     /**
+     * Returns the APJ plugin initialization object as JSON for use in views<br>
+     * Retorna el objeto de inicialización del plugin APJ como JSON para usar en las vistas
+     * Usage in view: APJ.init(APJ:{APJInit()});
+     * @return string JSON config object
+     */
+    protected function APJInit(): string
+    {
+        return json_encode([
+            'url'     => $this->self(),
+            'timeout' => $this->TimeOut,
+        ]);
+    }
+
+    /**
      * Get response for Ajax<br>
      * Obtiene respuesta para Ajax
      */
@@ -616,7 +678,7 @@ class APJController
         try {
             jQ::getResponse();
         } catch (Exception $e) {
-            error_log("Error in getResponse: " . $e->getMessage());
+            $this->_ErrorLog("Error in getResponse: " . $e->getMessage());
         }
     }
 
@@ -626,12 +688,12 @@ class APJController
      * @param string $selector
      * @return jQSelector
      */
-    protected function jQ(string $selector): jQSelector
+    protected function jQ(string $selector)
     {
         try {
             return jQ::setQuery($selector);
         } catch (Exception $e) {
-            error_log("Error in jQ: " . $e->getMessage());
+            $this->_ErrorLog("Error in jQ: " . $e->getMessage());
             return new jQSelector($selector);
         }
     }
@@ -646,7 +708,7 @@ class APJController
         try {
             jQ::Script($script);
         } catch (Exception $e) {
-            error_log("Error in jScript: " . $e->getMessage());
+            $this->_ErrorLog("Error in jScript: " . $e->getMessage());
         }
     }
 
@@ -665,7 +727,7 @@ class APJController
             }
             jQ::Script("jShowDown('{$input}','{$container}')");
         } catch (Exception $e) {
-            error_log("Error in jShowDown: " . $e->getMessage());
+            $this->_ErrorLog("Error in jShowDown: " . $e->getMessage());
         }
     }
   
@@ -675,15 +737,15 @@ class APJController
      * @param string $message
      * @param string $title (optional)
      * @param string $callback (optional)
-     * @param string $params (optional)
-     * @return jInfo
+     * @param array $params (optional)
+     * @return jQ jInfo
      */
-    protected function jInfo(string $message, string $title = '', string $callback = '', string $params = ''): jInfo
+    protected function jInfo(string $message, ?string $title = '', ?string $callback = '', ?array $params = [])
     {
         try {
             return jQ::jInfo($message, $title, $callback, $params);
         } catch (Exception $e) {
-            error_log("Error in jInfo: " . $e->getMessage());
+            $this->_ErrorLog("Error in jInfo: " . $e->getMessage());
             return jQ::jInfo("An error occurred", "Error");
         }
     }
@@ -694,15 +756,15 @@ class APJController
      * @param string $message
      * @param string $title (optional)
      * @param string $callback (optional)
-     * @param string $params (optional)
-     * @return jWarning
+     * @param array $params (optional)
+     * @return jQ jWarning
      */
-    protected function jWarning(string $message, string $title = '', string $callback = '', string $params = ''): jWarning
+    protected function jWarning(string $message, ?string $title = '', ?string $callback = '', ?array $params = [])
     {
         try {
             return jQ::jWarning($message, $title, $callback, $params);
         } catch (Exception $e) {
-            error_log("Error in jWarning: " . $e->getMessage());
+            $this->_ErrorLog("Error in jWarning: " . $e->getMessage());
             return jQ::jWarning("An error occurred", "Warning");
         }
     }
@@ -713,15 +775,15 @@ class APJController
      * @param string $message
      * @param string $title (optional)
      * @param string $callback (optional)
-     * @param string $params (optional)
-     * @return jError
+     * @param array $params (optional)
+     * @return jQ jError
      */
-    protected function jError(string $message, string $title = '', string $callback = '', string $params = ''): jError
+    protected function jError(string $message, ?string $title = '', ?string $callback = '', ?array $params = [])
     {
         try {
             return jQ::jError($message, $title, $callback, $params);
         } catch (Exception $e) {
-            error_log("Error in jError: " . $e->getMessage());
+            $this->_ErrorLog("Error in jError: " . $e->getMessage());
             return jQ::jError("An error occurred", "Error");
         }
     }
@@ -732,15 +794,15 @@ class APJController
      * @param string $message
      * @param string $title (optional)
      * @param string $callback (optional)
-     * @param string $params (optional)
-     * @return jConfirm
+     * @param array $params (optional)
+     * @return jQ jConfirm
      */
-    protected function jConfirm(string $message, string $title = '', string $callback = '', string $params = ''): jConfirm
+    protected function jConfirm(string $message, ?string $title = '', ?string $callback = '', ?array $params = [])
     {
         try {
             return jQ::jConfirm($message, $title, $callback, $params);
         } catch (Exception $e) {
-            error_log("Error in jConfirm: " . $e->getMessage());
+            $this->_ErrorLog("Error in jConfirm: " . $e->getMessage());
             return jQ::jConfirm("An error occurred", "Confirmation");
         }
     }
@@ -751,12 +813,11 @@ class APJController
      * @param string $message Message
      * @param string $title Title (optional)
      * @param string $callback Callback function/method (optional)
-     * @param string $params Javascript array format of callback parameters (optional)
      * @return jQ
      */
-    protected function jPrompt(string $message, string $title = '', string $callback = '', string $params = ''): jQ
+    protected function jPrompt(string $message, string $title = '', string $callback = '', ?array $params = [])
     {
-        return jQ::jPrompt($message, $title, $callback, $params);
+        return jQ::jPrompt($message, $title, $callback);
     }
 
     /**
@@ -767,7 +828,7 @@ class APJController
      * @param string $style Style, can be 'blink' (default none)
      * @return jQ
      */
-    protected function jProcess(string $message, string $title = '', string $style = ''): jQ
+    protected function jProcess(string $message, ?string $title = '', ?string $style = '')
     {
         return jQ::jProcess($message, $title, $style);
     }
@@ -777,7 +838,7 @@ class APJController
      * Cierra cualquier ventana de alerta
      * @return jQ
      */
-    protected function jClose(): jQ
+    protected function jClose()
     {
         return jQ::jClose();
     }
@@ -785,27 +846,27 @@ class APJController
   /**
   * Displays an array of Errors, Warnings or Information<br>
   * Despliega un array de Errores, Advertencias o Información
-  * @param (array) Arrays with messages
-  * @param (string) Title of message
-  * @param (string) Can be 'Error', 'Warning' or 'Info'
+  * @param (array) $messages Array with messages
+  * @param (string) $title Title of message
+  * @param (string) $type Can be 'Error', 'Warning' or 'Info'
   */
-  protected function showMessages($messages,$title,$type) {
+  protected function showMessages(array $messages, string $title, string $type) {
     $func=array("Error"=>"jError","Info"=>"jInfo","Warning"=>"jWarning");
     $msg="";
     foreach ($messages as $message) {
       $msg.=$message.'<br>';
     }
-    $this->$func[$type]($msg,$title);
+    $this->{$func[$type]}($msg,$title);
   }
 
   /**
   * Displays an array of errors in a Error alert (jError)<br>
   * Despliega un array de errores en una alerta de Error (jError)
-  * @param (array) Errors messages
-  * @param (string) Title
-  * @param (array) Fields alias (optional)
+  * @param (array) $errors Errors messages
+  * @param (string) $title Title (optional)
+  * @param (array) $alias Fields alias (optional)
   */
-  protected function showErrors($errors,$title,$alias) {
+  protected function showErrors(array $errors,?string $title = '', ?array $alias = []) {
     $msg="";
     foreach ($errors as $fld=>$err) {
       $fld=$this->_getAlias($fld,$alias);
@@ -819,11 +880,11 @@ class APJController
   /**
   * Displays array of warnings in a Warning alert (jWarning)<br>
   * Despliega un array de advertencias de un modelo en una alerta de Advertencia (jWarning)
-  * @param (array) Warning messages
-  * @param (string) Title
-  * @param (array) Fields alias (optional)
+  * @param (array) $warnings Warning messages
+  * @param (string) $title Title (optional)
+  * @param (array) $alias Fields alias (optional)
   */
-  protected function showWarnings($warnings,$title,$alias=NULL) {
+  protected function showWarnings(array $warnings,?string $title = '',?array $alias=[]) {
     $msg="";
     foreach ($warnings as $fld=>$wrn) {
       $fld=$this->_getAlias($fld,$alias);
@@ -841,9 +902,12 @@ class APJController
      * @param array $alias Array of alias names
      * @return string
      */
-    private function _getAlias(string $fld, array $alias): string
+    private function _getAlias(string $fld, ?array $alias = []): string
     {
-        return $alias[$fld] ?? $fld;
+        if (isset($alias[$fld]) && $alias[$fld] !== '') {
+            return $alias[$fld];
+        }
+        return $fld;
     }
 
     /**
@@ -862,6 +926,7 @@ class APJController
                     $this->jScript('window.location = "' . $url . '"');
                 }
                 $this->getResponse();
+                exit();
             } else {
                 if ($parent) {
                     echo "<script language=javascript> parent.location = '{$url}';</script>";
@@ -871,7 +936,27 @@ class APJController
                 die();
             }
         } catch (Exception $e) {
-            error_log("Error in redirect: " . $e->getMessage());
+            $this->_ErrorLog("Error in redirect: " . $e->getMessage());
         }
+    }    
+    
+    /**
+    * Instance of APJLog for local Error Logging
+    * 
+    */
+    private function _initializeLog():void 
+    {
+        $this->_Log = new APJLog();        
+    }
+    
+    /**
+    * Local Error logging method
+    * 
+    * @param string $msg Error message
+    * @return void
+    */
+    private function _ErrorLog(string $msg): void
+    {
+        $this->_Log->errorLog($msg);
     }
 }

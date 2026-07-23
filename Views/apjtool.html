@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta http-equiv="Content-Type" content="application/x-www-form-urlencoded; charset=UTF-8">
+    <title>APJModelTool</title>
+    <script type="text/javascript" src="APJ/jQuery/jquery-4.0.0.min.js"></script>
+    <script type="text/javascript" src="APJ/js/jqajaj.min.js?ver=2.0"></script>
+    <script type="text/javascript">
+    APJ.init(APJ:{APJInit()}).exposeGlobals();
+    </script>
+    <link rel="stylesheet" type="text/css" href="APJ/css/jqajaj.css">
+    <style>
+      body  { font-family: monospace; font-size: 13px; padding: 20px; }
+      h2    { margin: 0 0 6px; }
+      p.apjt-desc { color: #888; margin: 0 0 14px; font-size: 12px; }
+      table.apjt  { border-collapse: collapse; width: 100%; }
+      table.apjt th, table.apjt td { border: 1px solid #ccc; padding: 4px 10px; text-align: left; }
+      table.apjt th { background: #444; color: #fff; }
+      table.apjt tr:nth-child(even) { background: #f5f5f5; }
+      .apjt-center { text-align: center; }
+      .apjt-dev  { background: #e8a800; color: #fff; padding: 2px 8px; border-radius: 3px; font-size: 11px; }
+      .apjt-prod { background: #2e7d32; color: #fff; padding: 2px 8px; border-radius: 3px; font-size: 11px; }
+      .apjt-unk  { background: #888;    color: #fff; padding: 2px 8px; border-radius: 3px; font-size: 11px; }
+      .apjt-actions { margin: 10px 0; display: flex; gap: 8px; }
+      #apjt-result { margin-top: 14px; border-top: 1px solid #ddd; padding-top: 8px; }
+      .apjt-ok  { color: #2e7d32; margin: 2px 0; }
+      .apjt-err { color: #c62828; margin: 2px 0; }
+      @media (prefers-color-scheme: dark) {
+        body  { background: #1e1e1e; color: #ddd; }
+        table.apjt th { background: #333; }
+        table.apjt tr:nth-child(even) { background: #2a2a2a; }
+        table.apjt th, table.apjt td { border-color: #444; }
+        #apjt-result { border-color: #444; }
+      }
+    </style>
+  </head>
+  <body>
+    <h2>APJModelTool &mdash; Production Promotion</h2>
+    <p class="apjt-desc">
+      Converts <strong>DEV</strong> models (setTable) to <strong>PROD</strong> (defineStructure).
+      &nbsp;|&nbsp; <strong>Promote</strong>: defineStructure() only
+      &nbsp;|&nbsp; <strong>+Doc</strong>: + documentation comment
+      &nbsp;|&nbsp; <strong>+Doc+Create</strong>: + createTableIfNotExists()
+    </p>
+    <div class="apjt-actions">
+      <button onclick="APJCall('promoteAll',false,false)">Promote All</button>
+      <button onclick="APJCall('promoteAll',true,false)">Promote All + Doc</button>
+      <button onclick="APJCall('promoteAll',true,true)">Promote All + Doc + Create</button>
+      &nbsp;|&nbsp;
+      <button onclick="APJCall('demoteAll')">Demote All</button>
+    </div>
+    <table class="apjt">
+      <thead>
+        <tr>
+          <th>File</th>
+          <th>Class</th>
+          <th>Table</th>
+          <th>Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="apjt-body">
+        APJ:{listModels()}
+      </tbody>
+    </table>
+    <div id="apjt-result"></div>
+  </body>
+</html>

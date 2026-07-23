@@ -5,8 +5,8 @@
  * Version: 2.0.2412
  * Author: Ricardo Seiffert
  */
-namespace Libs\APJ;
-use Libs\APJ\jQ;
+namespace APJ;
+use APJ\jQ;
 
 class jQSelector
 {

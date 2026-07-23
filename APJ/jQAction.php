@@ -2,13 +2,15 @@
 /**
  * Class that sets parameters for jQAction object<br>
  * Clase que define los parámetros del objeto jQAction
- * Version: 2.0.2412
+ * Version: 2.0.2502
  * Author: Ricardo Seiffert
  */
-namespace Libs\APJ;
+namespace APJ;
 
-class jQAction
+class jQAction implements \JsonSerializable
 {
+    private array $_data = [];
+
     /**
      * Sets parameters and value to jQAction object<br>
      * Define los parámetros y valores del objeto jQAction
@@ -18,7 +20,12 @@ class jQAction
      */
     public function set(string $param, $value): self
     {
-        $this->$param = $value;
+        $this->_data[$param] = $value;
         return $this;
+    }
+
+    public function jsonSerialize(): mixed
+    {
+        return empty($this->_data) ? new \stdClass() : (object) $this->_data;
     }
 }

@@ -5,10 +5,14 @@
  * Version: 2.0.2412
  * Author: Ricardo Seiffert
  */
-namespace Libs\APJ;
+namespace APJ;
+use \stdClass;
+use \DateTime;
+use \Exception;
 
 trait APJCommon
 {
+
     /**
      * Return formatted current Date and Time<br>
      * Retorna la Fecha y Hora actual con formato
@@ -40,21 +44,17 @@ trait APJCommon
             case 'dec':
             case 'decimal':
                 if (is_numeric($value)) {
-                    return number_format($value, $fmt['decimal'][0], $fmt['decimal'][1], $fmt['int'][2]);
+                    return number_format($value, $fmt['decimal'][0], $fmt['decimal'][1], $fmt['decimal'][2]);
                 }
                 break;
             case 'date':
-                $dateTime = new DateTime($value);
-                return ($value === '0000-00-00' || $value === null) ? null : $dateTime->format($fmt['date']);
+                return ($value === '0000-00-00' || $value === null) ? null : (new DateTime($value))->format($fmt['date']);
             case 'datetime':
-                $dateTime = new DateTime($value);
-                return ($value === '0000-00-00 00:00:00' || $value === null) ? null : $dateTime->format($fmt['datetime']);
+                return ($value === '0000-00-00 00:00:00' || $value === null) ? null : (new DateTime($value))->format($fmt['datetime']);
             case 'time':
-                $dateTime = new DateTime($value);
-                return ($value === '00:00:00' || $value === null) ? null : $dateTime->format($fmt['time']);
+                return ($value === null) ? null : (new DateTime($value))->format($fmt['time']);
             case 'timestamp':
-                $dateTime = new DateTime($value);
-                return ($value == 0 || $value === null) ? null : $dateTime->format($fmt['timestamp']);
+                return ($value == 0 || $value === null) ? null : (new DateTime($value))->format($fmt['timestamp']);
             case 'smallint':
             case 'mediumint':
             case 'integer':
@@ -79,37 +79,45 @@ trait APJCommon
     }
 
     /**
-     * Validate dates by format<br>
-     * Valida fechas según formato
+     * Validate dates by format
+     * Validates dates according to a format
+     * 
      * @param mixed $date Date to validate
-     * @param string $format Date format
+     * @param string $format Date format (or 'timestamp')
      * @param bool $strict Strict validation
-     * @return bool true if invalid, false if valid
+     * @return bool True if valid, false if invalid
      */
     public function verifyDate($date, string $format, bool $strict = true): bool
     {
-        $dto = new DateTime();
         try {
             if ($format === 'timestamp') {
-                $dateTime = $dto->setTimestamp($date);
-            } else {
-                $dateTime = DateTime::createFromFormat($format, $date);
-                if ($dateTime && $strict) {
-                    $dateComp = $dateTime->format($format);
-                    if ($dateTime === false || $date !== $dateComp) {
-                        return true;
-                    }
-                    $errors = DateTime::getLastErrors();
-                    if (!empty($errors['warning_count'])) {
-                        return false;
-                    }
+                // Validate as a UNIX timestamp
+                return is_numeric($date) && (new DateTime('@' . $date)) !== false;
+            }
+
+            // Validate using the specified format
+            $dateTime = DateTime::createFromFormat($format, $date);
+            if ($dateTime === false) {
+                return false; // Invalid
+            }
+            $errors = DateTime::getLastErrors();
+            if (!empty($errors['warning_count']) || !empty($errors['error_count'])) {
+                return false; // Invalid
+            }
+
+            if ($strict) {
+                // Ensure strict match of input and parsed date
+                $dateComp = $dateTime->format($format);
+                if ($date !== $dateComp) {
+                    return false; // Invalid
                 }
             }
+
+            return true; // Valid
         } catch (Exception $e) {
             error_log("Error verifying date: " . $e->getMessage());
-            return true;
+            return false; // Invalid
         }
-        return ($dateTime === false);
     }
 
     /**
@@ -241,4 +249,18 @@ trait APJCommon
     {
         return time();
     }
+    
+    /**
+    * Common method for throwing Exceptions 
+    * 
+    * @param mixed $msg
+    * @return void
+    */
+    protected function throwException(string $msg): void
+    {
+        throw new Exception(
+            $msg
+        );
+    }
+
 }

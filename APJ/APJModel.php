@@ -5,8 +5,10 @@
  * Version: 2.0.2412
  * Author: Ricardo Seiffert
  */
-namespace Libs\APJ;
-use Libs\APJ\APJPDO;
+namespace APJ;
+use APJ\APJPDO;
+use APJ\APJCommon;
+use PDO;
 
 class APJModel extends APJPDO
 {
@@ -143,7 +145,7 @@ class APJModel extends APJPDO
      * @param string|null $password Password
      * @param string|null $charset Character Set
      */
-    public function __construct(string $dsn = null, string $user = null, string $password = null, string $charset = null)
+    public function __construct(?string $dsn = null, ?string $user = null, ?string $password = null, ?string $charset = null)
     {
         parent::__construct($dsn, $user, $password, $charset);
         $this->_clearError();
@@ -324,6 +326,7 @@ class APJModel extends APJPDO
         }
         $tr .= '+';
         foreach ($arr as $inx => $fld) {
+            $tab[$inx]='';
             foreach ($fld as $key => $value) {
                 if ($inx == 0) {
                     $align = STR_PAD_BOTH;
@@ -354,6 +357,165 @@ class APJModel extends APJPDO
     }
 
     /**
+    * Shows the creation query for te current table and shows it in a textarea for documentation<br>
+    * Muestra la consulta de creación de la tabla actual y la muestra en un área de texto para documentación.
+    */
+    public function showCreateTable()
+    {
+        $sql="SHOW CREATE TABLE `{$this->table}`;";
+        if ($row=$this->row($sql)) {
+            $out='<textarea rows="30" cols="120">'.$row['Create Table'].';</textarea>';
+            echo $out;
+            exit();
+        }
+    }
+
+    /**
+     * Returns the PHP code for defineStructure() as a string (no echo, no exit)<br>
+     * Retorna el código PHP del método defineStructure() como string (sin echo, sin exit)
+     * @return string PHP assignments ready to paste into defineStructure()
+     */
+    public function getStructureCode(): string
+    {
+        $out = '$this->table = "' . $this->table . '";' . PHP_EOL;
+        $out .= '$this->structure = array(';
+        foreach ($this->structure as $fld => $infos) {
+            $out .= "'{$fld}' => array(";
+            foreach ($infos as $info => $value) {
+                $sep = '';
+                if ($value === null || is_numeric(trim((string)$value))) {
+                    if ($value === null) {
+                        $value = 'NULL';
+                    }
+                } else {
+                    $sep = "'";
+                }
+                $out .= "'{$info}' => " . $sep . $value . $sep . ',';
+            }
+            $out = substr($out, 0, -1);
+            $out .= "),";
+        }
+        $out = substr($out, 0, -1);
+        $out .= ');' . PHP_EOL;
+        if ($this->alias) {
+            $out .= '$this->alias = array(';
+            foreach ($this->alias as $fld => $comment) {
+                $out .= "'{$fld}' => '{$comment}',";
+            }
+            $out = substr($out, 0, -1);
+            $out .= ');' . PHP_EOL;
+        }
+        if ($this->pk) {
+            $out .= '$this->pk = array(';
+            foreach ($this->pk as $pk) {
+                $out .= "'{$pk}',";
+            }
+            $out = substr($out, 0, -1);
+            $out .= ');' . PHP_EOL;
+        }
+        if ($this->fullPk) {
+            $out .= '$this->fullPk = array(';
+            foreach ($this->fullPk as $pk) {
+                $out .= "'{$pk}',";
+            }
+            $out = substr($out, 0, -1);
+            $out .= ');' . PHP_EOL;
+        }
+        $out .= '$this->fields = array_keys($this->structure);';
+        return $out;
+    }
+
+    /**
+     * Returns the table documentation comment block as a string (no echo, no exit)<br>
+     * Retorna el bloque de comentario de documentación de la tabla como string (sin echo, sin exit)
+     * @param bool $short Short description (omits Extra and Comment columns)
+     * @return string PHP block comment ready to paste before the class declaration
+     */
+    public function getDocComment(bool $short = false): string
+    {
+        $this->_clearError();
+        $arr = [];
+        $tab = [];
+        $tr = '';
+        $sizes = [];
+        $arr[0]['Field'] = ' Field ';
+        foreach ($this->structure as $fld => $str) {
+            foreach ($str as $key => $value) {
+                if ($short && ($key === "Comment" || $key === "Extra")) {
+                    break;
+                } else {
+                    $arr[0][$key] = " {$key} ";
+                }
+            }
+            break;
+        }
+        $inx = 1;
+        foreach ($this->structure as $fld => $str) {
+            $arr[$inx]['Field'] = " {$fld} ";
+            foreach ($str as $key => $value) {
+                if ($short && ($key === "Comment" || $key === "Extra")) {
+                    break;
+                } else {
+                    $arr[$inx][$key] = " {$value} ";
+                }
+            }
+            $inx++;
+        }
+        foreach ($arr as $ar) {
+            foreach ($ar as $k => $a) {
+                $size = strlen($a);
+                if (!isset($sizes[$k]) || $sizes[$k] < $size) {
+                    $sizes[$k] = $size;
+                }
+            }
+        }
+        foreach ($sizes as $size) {
+            $tr .= '+' . str_repeat('-', $size);
+        }
+        $tr .= '+';
+        foreach ($arr as $inx => $fld) {
+            $tab[$inx] = '';
+            foreach ($fld as $key => $value) {
+                if ($inx == 0) {
+                    $align = STR_PAD_BOTH;
+                } elseif (is_numeric(trim($value))) {
+                    $align = STR_PAD_LEFT;
+                } else {
+                    $align = STR_PAD_RIGHT;
+                }
+                $tab[$inx] .= '|' . str_pad($value, $sizes[$key], " ", $align);
+            }
+            $tab[$inx] .= '|';
+        }
+        $out = '/*' . PHP_EOL;
+        $out .= 'Table structure of [' . $this->table . ']' . PHP_EOL;
+        $out .= $tr . PHP_EOL;
+        foreach ($tab as $k => $row) {
+            $out .= $row . PHP_EOL;
+            if ($k == 0) {
+                $out .= $tr . PHP_EOL;
+            }
+        }
+        $out .= $tr . PHP_EOL;
+        $out .= '*/';
+        return $out;
+    }
+
+    /**
+     * Returns the CREATE TABLE SQL as a string with IF NOT EXISTS (no echo, no exit)<br>
+     * Retorna el SQL CREATE TABLE con IF NOT EXISTS como string (sin echo, sin exit)
+     * @return string CREATE TABLE IF NOT EXISTS SQL, or empty string if query fails
+     */
+    public function getCreateTableCode(): string
+    {
+        $sql = "SHOW CREATE TABLE `{$this->table}`;";
+        if ($row = $this->row($sql)) {
+            return str_replace('CREATE TABLE `', 'CREATE TABLE IF NOT EXISTS `', $row['Create Table']) . ';';
+        }
+        return '';
+    }
+
+    /**
      * Set model column properties and value, if exist in structure (overloading)<br>
      * Crea la columna del modelo con su valor, si existe en la estructura (sobrecarga) 
      * @param string $name Column name
@@ -366,13 +528,7 @@ class APJModel extends APJPDO
             $this->variables[$name] = $this->getValue($value, $this->structure[$name]['Type'], $this->trim);
             return;
         }
-        $trace = debug_backtrace();
-        trigger_error(
-            'Propiedad indefinida mediante __set(): ' . $name .
-            ' en ' . $trace[0]['file'] .
-            ' en la línea ' . $trace[0]['line'],
-            E_USER_NOTICE
-        );
+        error_log('APJModel::__set() — propiedad no definida en estructura: ' . $name);
     }
 
     /**
@@ -384,6 +540,9 @@ class APJModel extends APJPDO
      */
     private function _upperLower(string $name, $value)
     {
+        if ($value === null) {
+            return null;
+        }
         if (in_array($name, $this->toUpper, true)) {
             return mb_strtoupper($value, $this->charset);
         }
@@ -406,13 +565,6 @@ class APJModel extends APJPDO
                 return $this->variables[$name];
             }
         }
-        $trace = debug_backtrace();
-        trigger_error(
-            'Propiedad indefinida mediante __get(): ' . $name .
-            ' en ' . $trace[0]['file'] .
-            ' en la línea ' . $trace[0]['line'],
-            E_USER_NOTICE
-        );
         return null;
     }
 
@@ -426,7 +578,7 @@ class APJModel extends APJPDO
         $this->_clearError();
         if (is_array($this->structure)) {
             foreach ($this->fields as $fld) {
-                $var = $this->variables[$fld];
+                $var = isset($this->variables[$fld]) ? $this->variables[$fld] : null;
                 $type = $this->structure[$fld]['Type'];
                 $size = $this->structure[$fld]['Size'];
                 $decimals = $this->structure[$fld]['Decimals'];
@@ -434,20 +586,23 @@ class APJModel extends APJPDO
                 $default = $this->structure[$fld]['Default'];
                 $extra = $this->structure[$fld]['Extra'];
                 $comment = $this->structure[$fld]['Comment']; 
-                if (!in_array($fld, $this->pk, true) && $null === 'NO' && strlen($var) == 0 && strlen($default) > 0) {
+                $varStr     = (string) ($var ?? '');
+                $defaultStr = (string) ($default ?? '');
+                if (!in_array($fld, $this->pk, true) && $null === 'NO' && $varStr === '' && $defaultStr !== '') {
                     $var = $default;
+                    $varStr = $defaultStr;
                     $this->variables[$fld] = $default;
                 }
                 switch (true) {
-                    case (in_array($fld, $this->pk, true) && $extra !== 'auto_increment' && (is_null($var) || strlen($var) == 0)):
-                    case (!in_array($fld, $this->pk, true) && $null === 'NO' && strlen($var) == 0 && strlen($default) == 0):
+                    case (in_array($fld, $this->pk, true) && $extra !== 'auto_increment' && $defaultStr === '' && (is_null($var) || $varStr === '')):
+                    case (!in_array($fld, $this->pk, true) && $null === 'NO' && $varStr === '' && $defaultStr === ''):
                         $this->errors[$fld] = "no puede estar vacío";
                         break;
-                    case ($size && iconv_strlen($var) > $size):
+                    case ($size && iconv_strlen($varStr) > $size):
                         $this->errors[$fld] = "excede el tamaño definido ({$size}).";
                         break;
                 }
-                if (!in_array($fld, $this->pk, true) && strlen($var) > 0) {
+                if (!in_array($fld, $this->pk, true) && $varStr !== '') {
                     switch ($type) {
                         case 'int':
                         case 'bigint':
@@ -464,12 +619,8 @@ class APJModel extends APJPDO
                             }
                             break;
                         case 'datetime':
-                            if (!$this->verifyDate($var, 'Y-m-d H:i:s', false)) {
-                                $this->errors[$fld] = "no es una fecha/hora válida";
-                            }
-                            break;
                         case 'timestamp':
-                            if (!$this->verifyDate($var, 'timestamp', true)) {
+                            if (!$this->verifyDate($var, 'Y-m-d H:i:s', false)) {
                                 $this->errors[$fld] = "no es una fecha/hora válida";
                             }
                             break;
@@ -518,11 +669,12 @@ class APJModel extends APJPDO
     public function setFormat(array $row): array
     {
         $rowf = [];
-        if (is_array($row)) {
-            foreach ($row as $fld => $value) {
+        foreach ($row as $fld => $value) {
+            if (isset($this->structure[$fld])) {
                 $this->$fld = $value;
-                $type = $this->structure[$fld]['Type'];
-                $rowf[$fld] = $this->format($value, $type);
+                $rowf[$fld] = $this->format($value, $this->structure[$fld]['Type']);
+            } else {
+                $rowf[$fld] = $value;
             }
         }
         return $rowf;
@@ -673,7 +825,7 @@ class APJModel extends APJPDO
     {
         $this->_clearError();
         if (in_array($field, $this->fields, true) && $search) {
-            return $this->rows($this->_querySelect() . " WHERE {$field} LIKE '{$search}'" . $this->_queryLimit());
+            return $this->rows($this->_querySelect() . " WHERE {$field} LIKE :search" . $this->_queryLimit(), ['search' => $search]);
         }
         return [];
     }
@@ -684,7 +836,7 @@ class APJModel extends APJPDO
      * @param string $order Comma separated order columns (optional)
      * @return mixed Associative rows array or false if any error
      */
-    public function all(string $order = '')
+    public function all(?string $order = ''): array
     {
         $this->_clearError();
         $order = ($order) ? " ORDER BY {$order}" : $this->_queryOrder();
@@ -698,7 +850,7 @@ class APJModel extends APJPDO
      * @param string $order Comma separated order columns (optional)
      * @return mixed Associative rows array or false if any error
      */
-    public function select($condition = '', string $order = '')
+    public function select($condition = '', ?string $order = '')
     {
         $this->_clearError();
         $order = ($order) ? " ORDER BY {$order}" : $this->_queryOrder();
@@ -753,7 +905,7 @@ class APJModel extends APJPDO
                         $col = $field['Field'];
                         $columns .= "`{$table}`.{$col}";
                         if (in_array($col, $fieldArray, true)) {
-                            $cumul[$col]++;
+                            $cumul[$col] = isset($cumul[$col]) ? $cumul[$col] + 1 : 1;
                             $as = $col . $cumul[$col];
                             $columns .= " AS {$as}";
                         }
@@ -1071,10 +1223,10 @@ class APJModel extends APJPDO
             }
             $this->where = (strlen($where) > 5) ? substr($where, 0, -5) : $where;
             return true;
-        } elseif (strlen($condition) > 0 && is_numeric($condition)) {
-            $this->where = "{$this->fullPk[0]} = {$condition}";      
+        } elseif (strlen($condition ?? '') > 0 && is_numeric($condition)) {
+            $this->where = "{$this->fullPk[0]} = {$condition}";
             return true;
-        } elseif (strlen($condition) > 0) {
+        } elseif (strlen($condition ?? '') > 0) {
             $this->where = $condition;
             return true;
         }
