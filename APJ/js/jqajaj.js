@@ -1,6 +1,6 @@
 /*!
  * APJ - Async PHP jQuery Plugin
- * Version 2.0.0
+ * Version 2.0.3
  * Requiere jQuery 3.x | PHP 8
  *
  * Cambios principales respecto a 1.9:
@@ -11,6 +11,31 @@
  * - Compatibilidad con jQuery 3 (.bind/.unbind eliminados → .on/.off)
  * - ES5 estricto, sin variables globales implícitas
  * - Helpers globales opcionales via APJ.exposeGlobals()
+ *
+ * Cambios en 2.0.1:
+ * - Corregido botón "No" de jConfirm: ya no reinvoca el callback de "Sí" con
+ *   (false). Antes, si el callback era 'APJSubmit', se terminaba llamando
+ *   APJSubmit(false), que caía al action por defecto 'main' y producía
+ *   "El método main no existe!" en el servidor. Ahora "No" solo cierra el diálogo.
+ *
+ * Cambios en 2.0.2:
+ * - Nuevas acciones APJSubmit/APJCall en _runAction: el controlador PHP
+ *   (via $this->APJSubmit()/$this->APJCall(), ver APJController.php) puede
+ *   disparar un APJSubmit/APJCall real del lado del cliente de inmediato al
+ *   procesar la respuesta, sin diálogo de por medio y sin depender de
+ *   exposeGlobals() (llaman APJ.APJSubmit/APJ.APJCall directo, no
+ *   window[...]).
+ *
+ * Cambios en 2.0.3:
+ * - $.fieldValue(): un radio SIN marcar ya no envía '0' - se excluye del
+ *   formulario (return null), igual que un campo cualquiera sin valor. Antes,
+ *   al compartir la misma rama que checkbox, un grupo de radios con el mismo
+ *   name mandaba dos entradas (la marcada con su value real, la NO marcada
+ *   con '0'), y como PHP se queda con el último valor repetido, el radio que
+ *   apareciera después en el HTML siempre ganaba sin importar cuál estuviera
+ *   realmente marcado - el selector "Nivel" de QueryBuilder.php nunca
+ *   cambiaba de Detalle a Solo Totales por esto. El comportamiento de
+ *   checkbox (marcado→value o '1', sin marcar→'0') no cambia.
  */
 ;(function ($) {
   'use strict';
@@ -223,6 +248,14 @@
         },
         jRedirect: function (o) {
           if (o.parent) { window.parent.location = o.url; } else { window.location = o.url; }
+        },
+        APJSubmit: function (o) {
+          var args = [o.form, o.action].concat(o.params || []);
+          APJ.APJSubmit.apply(APJ, args);
+        },
+        APJCall: function (o) {
+          var args = [o.method].concat(o.params || []);
+          APJ.APJCall.apply(APJ, args);
         }
       };
       if (typeof actions[func] === 'function') {
@@ -334,7 +367,6 @@
             });
             $('#dialogCancel').on('click', function () {
               self.close();
-              if (cb) { cb(false); }
             });
           };
           break;
@@ -435,7 +467,10 @@
     var typ = elem.type, tag = elem.tagName.toLowerCase();
     if (typeof successful === 'undefined') { successful = true; }
 
-    if (successful && (typ === 'checkbox' || typ === 'radio')) {
+    if (successful && typ === 'radio') {
+      return elem.checked ? elem.value : null;
+    }
+    if (successful && typ === 'checkbox') {
       return elem.checked ? (elem.value || '1') : '0';
     }
     if (successful && (!elem.name || elem.disabled || typ === 'reset' || typ === 'button' ||
