@@ -2,8 +2,26 @@
 /**
  * Controls the user session<br>
  * Controla la sesión de usuarios
- * Version: 2.0.2412
+ * Version: 2.0.2609
  * Author: Ricardo Seiffert
+ * Cambios en 2.0.2609 (2): la función global isHttps() (init.php) se
+ * retiró - reemplazada por el método privado self::isHttps() de esta
+ * misma clase (decisión explícita del usuario: prefiere la detección de
+ * HTTPS duplicada localmente en cada clase que la necesita - esta,
+ * APJController vía APJCommon, Helpers\Sendmail donde exista - antes que
+ * una función suelta fuera del namespace APJ\ que además no siempre se
+ * usa).
+ * Cambios en 2.0.2609: la detección de HTTPS (duplicada 2 veces en este
+ * archivo) ahora usa un método centralizado en vez de repetir
+ * isset($_SERVER['HTTPS']) || (...HTTP_X_FORWARDED_PROTO...) inline.
+ * Además, setLoginCookie()/deleteRememberMeCookies() usaban
+ * isset($_SERVER['HTTPS']) directo (sin el fallback de proxy) para el
+ * flag 'secure' - detrás del proxy reverso de producción esas cookies
+ * remember-me nunca quedaban con secure=true. Ahora usan isHttps() igual
+ * que el resto.
+ * Cambios en 2.0.2608: same() ya no invalida la sesión por cambio de IP
+ * (usuarios con CGNAT/IP móvil rotando cada pocos minutos quedaban
+ * desconectados en plena sesión). Se mantiene solo el chequeo de User-Agent.
  */
 namespace APJ;
 
@@ -43,7 +61,7 @@ class APJSession
         $limit = defined('SESSION_LIMIT') ? SESSION_LIMIT : 1440;
         $serverName = $_SERVER['SERVER_NAME'] ?? '';
         $domain = str_contains($serverName, '.') ? $serverName : '';
-        $isHttps = isset($_SERVER['HTTPS']) || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
+        $isHttps = self::isHttps();
         if (session_status() != PHP_SESSION_ACTIVE) {
             session_set_cookie_params([
                 'lifetime' => $limit,
@@ -79,6 +97,29 @@ class APJSession
     }
 
     /**
+    * Detects whether the current request arrived over HTTPS, accounting
+    * for the production reverse proxy (cPanel/Nginx) that terminates TLS
+    * and forwards to Apache in plain HTTP - $_SERVER['HTTPS'] is only set
+    * when Apache itself sees the TLS connection directly. Duplicated
+    * locally in each class that needs it (this one, APJController via
+    * APJCommon, Helpers\Sendmail where it exists) instead of a global
+    * init.php function, since it's only needed in a handful of
+    * narrowly-scoped places.<br>
+    * Detecta si el request actual llegó por HTTPS, contemplando el proxy
+    * reverso de producción (cPanel/Nginx) que termina TLS y reenvía en
+    * HTTP plano hacia Apache - $_SERVER['HTTPS'] solo queda seteado cuando
+    * Apache ve la conexión TLS directamente. Duplicado localmente en cada
+    * clase que lo necesita (esta, APJController vía APJCommon,
+    * Helpers\Sendmail donde exista) en vez de una función global en
+    * init.php, ya que solo hace falta en unos pocos lugares puntuales.
+    * @return bool
+    */
+    private static function isHttps(): bool
+    {
+        return isset($_SERVER['HTTPS']) || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
+    }
+
+    /**
      * Start session<br>
      * Inicia la sesión
      * @param string $name Session name
@@ -96,7 +137,7 @@ class APJSession
             self::setName($name);
             $serverName = $_SERVER['SERVER_NAME'] ?? '';
             $domain = $domain ?? (str_contains($serverName, '.') ? $serverName : '');
-            $isHttps = isset($_SERVER['HTTPS']) || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
+            $isHttps = self::isHttps();
             $https = $secure ?? $isHttps;
             session_set_cookie_params([
                 'lifetime' => $limit,
@@ -154,8 +195,11 @@ class APJSession
      */
     private static function same(): bool
     {
-        return isset($_SESSION['IPaddress'], $_SESSION['userAgent']) &&
-            $_SESSION['IPaddress'] === md5($_SERVER['REMOTE_ADDR']) &&
+        // $_SESSION['IPaddress'] ya no se usa para invalidar la sesión (se
+        // sigue guardando, útil para logs) - usuarios con CGNAT/IP móvil que
+        // rota cada pocos minutos quedaban desconectados en plena sesión
+        // aunque siguieran en el mismo dispositivo. 14-ago-2026.
+        return isset($_SESSION['userAgent']) &&
             $_SESSION['userAgent'] === md5($_SERVER['HTTP_USER_AGENT']);
     }
 
@@ -233,7 +277,7 @@ class APJSession
             'expires'  => time() + ($days * 86400),
             'path'     => '/',
             'domain'   => $_SERVER['SERVER_NAME'],
-            'secure'   => isset($_SERVER['HTTPS']),
+            'secure'   => self::isHttps(),
             'httponly' => true,
             'samesite' => 'Strict',
         ]);
@@ -270,7 +314,7 @@ class APJSession
             'expires'  => time() - 3600,
             'path'     => '/',
             'domain'   => $_SERVER['SERVER_NAME'],
-            'secure'   => isset($_SERVER['HTTPS']),
+            'secure'   => self::isHttps(),
             'httponly' => true,
             'samesite' => 'Strict',
         ];

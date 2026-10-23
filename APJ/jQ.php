@@ -2,8 +2,12 @@
 /**
  * Static class that responds to jQuery from PHP<br>
  * Clase Estática que responde acciones jQuery desde PHP
- * Version: 2.0.2412
+ * Version: 2.0.2608
  * Author: Ricardo Seiffert
+ * Cambios en 2.0.2608: nuevos APJCall()/APJSubmit() - encolan una acción
+ * nativa (misma familia que jInfo/Script) para que el cliente dispare
+ * APJ.APJCall()/APJ.APJSubmit() de inmediato al procesar la respuesta, sin
+ * pasar por jScript()/new Function() ni por un diálogo. Idea del usuario.
  */
 namespace APJ;
 use APJ\jQAction;
@@ -71,6 +75,53 @@ class jQ
         self::init();
         $jQAction = new jQAction();
         $jQAction->set('scr', $script);
+        self::setAction(__FUNCTION__, $jQAction);
+        return self::$jQ;
+    }
+
+    /**
+     * Queues a client-side APJCall(method, ...params) to run immediately
+     * when the response is processed, without any dialog in between.<br>
+     * Encola un APJCall(method, ...params) del lado del cliente para que
+     * se ejecute de inmediato al procesar la respuesta, sin ningún diálogo
+     * de por medio.
+     * @param string $method Controller method to invoke
+     * @param array $params Extra positional arguments (optional)
+     * @return jQ
+     */
+    public static function APJCall(string $method, array $params = []): self
+    {
+        self::init();
+        $jQAction = new jQAction();
+        $jQAction->set('method', $method);
+        if ($params) {
+            $jQAction->set('params', $params);
+        }
+        self::setAction(__FUNCTION__, $jQAction);
+        return self::$jQ;
+    }
+
+    /**
+     * Queues a client-side APJSubmit(form, action, ...params) to run
+     * immediately when the response is processed, without any dialog in
+     * between.<br>
+     * Encola un APJSubmit(form, action, ...params) del lado del cliente
+     * para que se ejecute de inmediato al procesar la respuesta, sin
+     * ningún diálogo de por medio.
+     * @param string $form Id of the form to submit
+     * @param string $action Controller method to invoke
+     * @param array $params Extra positional arguments (optional)
+     * @return jQ
+     */
+    public static function APJSubmit(string $form, string $action, array $params = []): self
+    {
+        self::init();
+        $jQAction = new jQAction();
+        $jQAction->set('form', $form);
+        $jQAction->set('action', $action);
+        if ($params) {
+            $jQAction->set('params', $params);
+        }
         self::setAction(__FUNCTION__, $jQAction);
         return self::$jQ;
     }

@@ -2,8 +2,46 @@
 /*
  * APJ Base Model that extends APJPDO class<br>
  * Modelo de base que extiende la clase APJPDO
- * Version: 2.0.2412
+ * Version: 2.0.2610
  * Author: Ricardo Seiffert
+ *
+ * Cambios en 2.0.2610 (24-ago-2026):
+ * - getStructureCode(): el bloque de $this->structure no tenia el guard
+ *   if ($this->structure) que si tienen alias/pk/fullPk - con una tabla o
+ *   vista inexistente (setTable() sobre algo sin columnas), el substr()
+ *   que saca la coma final le comia el "(" de apertura y generaba PHP
+ *   invalido ($this->structure = array);). Encontrado documentando un
+ *   modelo cuya vista de BD nunca se creo en gestion3 (VistaAnexos.php).
+ *
+ * Cambios en 2.0.2609 (19-ago-2026):
+ * - basicValidation() invertido: ahora true = valido (sin errores), false =
+ *   con errores (antes era al reves, contra-intuitivo dado el nombre del
+ *   metodo). verifyDate() ya usaba la semantica correcta en v2 (true =
+ *   valido), asi que no requirio cambios.
+ *
+ * Cambios en 2.0.2608 (18-ago-2026):
+ * - Corregido _values(): no incluia las columnas generadas (Extra =
+ *   "VIRTUAL GENERATED"/"STORED GENERATED") en la lista de exclusion, solo
+ *   excluia auto_increment. Al hacer find()+update() sobre una tabla con
+ *   una columna generada, se intentaba escribirle un valor explicito y
+ *   MariaDB lo rechazaba con error 3105. Bug encontrado en APJ v1
+ *   (gestion, lista_espera.activo_unico), el mismo codigo existia sin
+ *   corregir en v2.
+ *
+ * Cambios en 2.0.2608 (14-ago-2026):
+ * - Corregido showStructure()/getStructureCode(): el Default de una columna
+ *   solo se deja como literal PHP sin comillas si el tipo de columna es
+ *   realmente numerico (int/bigint/tinyint/etc). Antes cualquier valor que
+ *   pareciera numerico segun is_numeric() se dejaba sin comillas sin mirar
+ *   el tipo real de la columna, asi que un char(6) con Default '000' se
+ *   generaba como el literal PHP 000 (octal = entero 0), perdiendo los
+ *   ceros.
+ *
+ * Cambios en 2.0.2608:
+ * - Agregado upsert(): INSERT ... ON DUPLICATE KEY UPDATE. A diferencia de
+ *   replace(), nunca borra la fila existente (hace UPDATE real en el lugar),
+ *   evitando el DELETE+INSERT interno de REPLACE en tablas de lectura
+ *   frecuente.
  */
 namespace APJ;
 use APJ\APJPDO;
@@ -233,11 +271,16 @@ class APJModel extends APJPDO
         foreach ($this->structure as $fld => $infos) {
             $out .= "'{$fld}' => array(";
             foreach ($infos as $info => $value) {
-                $sep = '';
-                if ($value === null || is_numeric(trim((string)$value))) {
-                    if ($value === null) {
-                        $value = 'NULL';
-                    }
+                if ($value === null) {
+                    $sep = '';
+                    $value = 'NULL';
+                } elseif ($info === 'Default') {
+                    // Solo se deja como literal PHP si el tipo de columna es realmente
+                    // numerico; si no, un default como '000' se volveria octal (=> 0)
+                    $numericTypes = ['bit', 'tinyint', 'smallint', 'mediumint', 'int', 'bigint', 'year', 'float', 'double', 'real'];
+                    $sep = (in_array(strtolower((string)$infos['Type']), $numericTypes) && is_numeric(trim((string)$value))) ? '' : "'";
+                } elseif (is_numeric(trim((string)$value))) {
+                    $sep = '';
                 } else {
                     $sep = "'";
                 }
@@ -378,25 +421,37 @@ class APJModel extends APJPDO
     public function getStructureCode(): string
     {
         $out = '$this->table = "' . $this->table . '";' . PHP_EOL;
-        $out .= '$this->structure = array(';
-        foreach ($this->structure as $fld => $infos) {
-            $out .= "'{$fld}' => array(";
-            foreach ($infos as $info => $value) {
-                $sep = '';
-                if ($value === null || is_numeric(trim((string)$value))) {
+        if ($this->structure) {
+            $out .= '$this->structure = array(';
+            foreach ($this->structure as $fld => $infos) {
+                $out .= "'{$fld}' => array(";
+                foreach ($infos as $info => $value) {
                     if ($value === null) {
+                        $sep = '';
                         $value = 'NULL';
+                    } elseif ($info === 'Default') {
+                        // Solo se deja como literal PHP si el tipo de columna es realmente
+                        // numerico; si no, un default como '000' se volveria octal (=> 0)
+                        $numericTypes = ['bit', 'tinyint', 'smallint', 'mediumint', 'int', 'bigint', 'year', 'float', 'double', 'real'];
+                        $sep = (in_array(strtolower((string)$infos['Type']), $numericTypes) && is_numeric(trim((string)$value))) ? '' : "'";
+                    } elseif (is_numeric(trim((string)$value))) {
+                        $sep = '';
+                    } else {
+                        $sep = "'";
                     }
-                } else {
-                    $sep = "'";
+                    $out .= "'{$info}' => " . $sep . $value . $sep . ',';
                 }
-                $out .= "'{$info}' => " . $sep . $value . $sep . ',';
+                $out = substr($out, 0, -1);
+                $out .= "),";
             }
             $out = substr($out, 0, -1);
-            $out .= "),";
+            $out .= ');' . PHP_EOL;
+        } else {
+            // Sin columnas (tabla/vista inexistente, o SHOW FULL COLUMNS sin
+            // resultados) - emitir array() vacío en vez de que el substr()
+            // de arriba le coma el "(" de apertura y deje PHP inválido.
+            $out .= '$this->structure = array();' . PHP_EOL;
         }
-        $out = substr($out, 0, -1);
-        $out .= ');' . PHP_EOL;
         if ($this->alias) {
             $out .= '$this->alias = array(';
             foreach ($this->alias as $fld => $comment) {
@@ -571,7 +626,7 @@ class APJModel extends APJPDO
     /**
      * Basic columns validation by model and set errors property<br>
      * Validación básica según modelo y rellena la propiedad errors
-     * @return bool true = has errors, false = no errors
+     * @return bool true = no errors (válido), false = has errors
      */
     public function basicValidation(): bool
     {
@@ -641,7 +696,7 @@ class APJModel extends APJPDO
         if (count($this->errors) > 0) {
             $this->error = true;
         }
-        return (count($this->errors) > 0);
+        return (count($this->errors) === 0);
     }
 
     /**
@@ -755,6 +810,38 @@ class APJModel extends APJPDO
     }
 
     /**
+     * Insert or update on duplicate key (upsert)<br>
+     * Inserta o actualiza si ya existe. A diferencia de replace(), nunca
+     * borra la fila existente (hace UPDATE real en el lugar vía ON
+     * DUPLICATE KEY UPDATE) — preferible a replace() en tablas de lectura
+     * frecuente, ya que evita el DELETE+INSERT interno que hace REPLACE.
+     * @param array|null $values Associative array of values (optional if values are set)
+     * @return mixed Number of affected rows or false if any error
+     */
+    public function upsert(?array $values = null): int|bool
+    {
+        $this->_clearError();
+        if ($this->_values($values, true)) {
+            $fields = '';
+            $fieldsvals = '';
+            $update = '';
+            foreach ($this->values as $column => $val) {
+                $fields .= "{$column},";
+                $fieldsvals .= ",:{$column}";
+                if (!in_array($column, $this->pk)) {
+                    $update .= "{$column}=VALUES({$column}),";
+                }
+            }
+            $fields = substr($fields, 0, -1);
+            $fieldsvals = substr($fieldsvals, 1);
+            $update = ($update !== '') ? substr($update, 0, -1) : "{$this->pk[0]}={$this->pk[0]}";
+            $sql = "INSERT INTO `{$this->table}` ({$fields}) VALUES ({$fieldsvals}) ON DUPLICATE KEY UPDATE {$update}";
+            return $this->execute($sql, $this->values);
+        }
+        return false;
+    }
+
+    /**
      * Deletes a row<br>
      * Elimina una fila
      * @param mixed $where Array/int or WHERE string condition (optional if primary key value is set)
@@ -809,7 +896,9 @@ class APJModel extends APJPDO
         $this->_clearError();
         if ($this->_condition($where, true)) {
             $sql = $this->_querySelect() . $this->_queryWhere() . $this->_queryOrder() . $this->_queryLimit();
-            return $this->variables = $this->row($sql, $this->values);
+            $result = $this->row($sql, $this->values);
+            $this->variables = $result !== false ? $result : [];
+            return $result;
         }
         return false;
     }
@@ -1148,7 +1237,11 @@ class APJModel extends APJPDO
         if (empty($values) && $this->variables) {
             foreach ($this->variables as $column => $val) {
                 if (in_array($column, $this->fields, true)) {
-                    if ($this->structure[$column]['Extra'] !== "auto_increment" || $incId) {
+                    $extra = $this->structure[$column]['Extra'];
+                    if (stripos($extra, 'GENERATED') !== false) {
+                        continue;
+                    }
+                    if ($extra !== "auto_increment" || $incId) {
                         $this->values[$column] = $val;
                     }
                 }
@@ -1157,7 +1250,11 @@ class APJModel extends APJPDO
         } elseif (is_array($values)) {
             foreach ($values as $column => $val) {
                 if (in_array($column, $this->fields, true)) {
-                    if ($this->structure[$column]['Extra'] !== "auto_increment" || $incId) {
+                    $extra = $this->structure[$column]['Extra'];
+                    if (stripos($extra, 'GENERATED') !== false) {
+                        continue;
+                    }
+                    if ($extra !== "auto_increment" || $incId) {
                         $this->values[$column] = $val;
                     }
                 }

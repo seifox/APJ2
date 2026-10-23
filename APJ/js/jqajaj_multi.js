@@ -1,7 +1,10 @@
 /*!
- * APJ - Async PHP jQuery Plugin
- * Version 2.0.1
- * Requiere jQuery 3.x | PHP 8
+ * APJ Multi-idioma - Async PHP jQuery Plugin
+ * Version 2.0.7 (numeración alineada con jqajaj.js 2.0.7)
+ * Requiere jQuery 3.x | PHP 8.x
+ *
+ * Misma funcionalidad que jqajaj.js 2.0.7 + sistema multilingüe. Todo cambio
+ * de jqajaj.js debe replicarse aquí (y viceversa), regenerando ambos .min.js.
  *
  * Novedades en 2.0.1:
  * - Sistema multilingüe: idiomas base incluidos (es, en, pt, fr, de)
@@ -9,6 +12,37 @@
  * - APJ.init({ translations: {...} }) para sobreescribir desde PHP
  * - Ambos combinables: lang selecciona la base, translations sobreescribe claves
  * - APJ.addLang() para agregar idiomas adicionales en runtime
+ *
+ * Cambios en 2.0.2:
+ * - Corregido botón "No" de jConfirm: ya no reinvoca el callback de "Sí" con
+ *   (false). Antes, si el callback era 'APJSubmit', se terminaba llamando
+ *   APJSubmit(false), que caía al action por defecto 'main' y producía
+ *   "El método main no existe!" en el servidor. Ahora "No" solo cierra el diálogo.
+ *
+ * Cambios en 2.0.3 (de esta versión multi-idioma; equivale a 2.0.2 de jqajaj.js):
+ * - _runAction: nuevas acciones nativas APJSubmit/APJCall (misma familia que
+ *   jInfo/Script) - el servidor las encola vía jQ::APJSubmit()/jQ::APJCall()
+ *   (ver APJ2/APJ/jQ.php) para disparar un APJSubmit()/APJCall() real del
+ *   lado del cliente de inmediato, sin pasar por jScript()/new Function().
+ *
+ * Cambios en 2.0.7 (22-oct-2026) - puesta al día con jqajaj.js 2.0.3 a 2.0.7:
+ * - $.fieldValue(): un radio SIN marcar ya no envía '0' - se excluye del
+ *   formulario (jqajaj.js 2.0.3). Antes, en un grupo de radios con el mismo
+ *   name, el que apareciera último en el HTML siempre ganaba en PHP.
+ * - Nuevas APJSubmitSilent()/APJCallSilent() (+ globals vía exposeGlobals()):
+ *   idénticas a APJSubmit()/APJCall() pero sin mostrar el busy
+ *   (jqajaj.js 2.0.5). _ajax.send() acepta un 2do parámetro opcional {busy:false}.
+ * - Diálogos y busy con DOM propio, creado una sola vez y reutilizado
+ *   (jqajaj.js 2.0.6): #dialogbox.<tipo>Dialog > #dialogboxhead (#dialogboxicon
+ *   + #dialogboxtitle) > #dialogboxbody > #dialogboxtext > #dialogboxfoot. El
+ *   tipo va como clase en #dialogbox (infoDialog, warningDialog, ...) en vez de
+ *   las clases infoBody/warningBody/... - REQUIERE el APJ/css/jqajaj.css nuevo.
+ * - Nueva opción _config.keyLock (true por defecto): con busy() el teclado queda
+ *   bloqueado; con un diálogo abierto, confinado a él (Tab cicla entre sus
+ *   botones), y al cerrar el foco vuelve a donde estaba (jqajaj.js 2.0.6).
+ * - Con un diálogo abierto, los focusin dentro de #dialogbox no se propagan, para
+ *   que el focus trap de una ventana modal de la página no le robe el foco
+ *   (jqajaj.js 2.0.7).
  *
  * Inicialización típica generada por el framework PHP:
  *   APJ.init({
@@ -168,9 +202,10 @@
   // ─── Configuración por defecto ───────────────────────────────────────────────
 
   var _config = {
-    url:          '',
+    url:          '',          // Requerido: definir en APJ.init()
     timeout:      10000,
     images:       'APJ/images/',
+    keyLock:      true,        // busy() bloquea el teclado y un diálogo lo confina (false: no se toca)
     lang:         'es',
     translations: {}
   };
@@ -250,12 +285,12 @@
 
   var _ajax = {
 
-    send: function (params) {
+    send: function (params, opts) {
       if (!_config.url) {
         console.error('[APJ] url no configurada. Usa APJ.init({ url: "..." }) primero.');
         return;
       }
-      _dialogs.busy();
+      if (!(opts && opts.busy === false)) { _dialogs.busy(); }
       var ajaxOpts = {
         url:      _config.url,
         async:    true,
@@ -374,6 +409,14 @@
         },
         jRedirect: function (o) {
           if (o.parent) { window.parent.location = o.url; } else { window.location = o.url; }
+        },
+        APJSubmit: function (o) {
+          var args = [o.form, o.action].concat(o.params || []);
+          APJ.APJSubmit.apply(APJ, args);
+        },
+        APJCall: function (o) {
+          var args = [o.method].concat(o.params || []);
+          APJ.APJCall.apply(APJ, args);
         }
       };
       if (typeof actions[func] === 'function') {
@@ -402,10 +445,25 @@
   };
 
   // ─── Módulo de diálogos ───────────────────────────────────────────────────────
+  // DOM propio de jqajaj, sin depender de ningún framework CSS: el aspecto sale
+  // solo de APJ/css/jqajaj.css y de los íconos de APJ/images/ (<tipo>32.png),
+  // que cada sitio modifica a su gusto. Estructura:
+  //   #dialogoverlay
+  //   #dialogbox.<tipo>Dialog > #dialogboxhead (#dialogboxicon + #dialogboxtitle)
+  //                           > #dialogboxbody > #dialogboxtext
+  //                           > #dialogboxfoot (#dialogOk / #dialogCancel)
+  //   #busyoverlay + #busybox
+  // <tipo> = info | warning | error | confirm | prompt | process.
+  // Se crean una sola vez y se reutilizan. Mientras hay un diálogo abierto, con
+  // _config.keyLock el teclado queda confinado a él (Tab cicla entre sus botones);
+  // con el busy, el teclado queda bloqueado. Ninguno de los dos mueve el foco de
+  // la página: al cerrar un diálogo, el foco vuelve a donde estaba.
 
   var _dialogs = {
-    _blinkId: 0,
-    _isOpen:  false,
+    _blinkId:   0,
+    _isOpen:    false,
+    _mode:      '',      // '' | 'busy' | 'dialog'
+    _lastFocus: null,
 
     info:    function (msg, title, cb, params) { this._render('info',    msg, title || _t.titles.info,    cb, params); },
     warning: function (msg, title, cb, params) { this._render('warning', msg, title || _t.titles.warning, cb, params); },
@@ -415,41 +473,46 @@
     process: function (msg, title, style)      { this._render('process', msg, title || _t.titles.process, null, null, style); },
 
     busy: function () {
-      if (!this._isOpen) { this._showBusy(); }
+      if (this._isOpen) { return; }
+      this._ensureDom();
+      this._open('busy');
+      $('#busyoverlay, #busybox').show();
     },
 
-    _showBusy: function () {
-      this.close();
+    _ensureDom: function () {
+      if (document.getElementById('dialogbox')) { return; }
       $(document.body).append(
+        '<div id="dialogoverlay"></div>' +
+        '<div id="dialogbox" role="dialog" aria-modal="true" aria-labelledby="dialogboxtitle">' +
+          '<div id="dialogboxhead">' +
+            '<img id="dialogboxicon" src="" alt="">' +
+            '<span id="dialogboxtitle"></span>' +
+          '</div>' +
+          '<div id="dialogboxbody"><div id="dialogboxtext"></div></div>' +
+          '<div id="dialogboxfoot"></div>' +
+        '</div>' +
         '<div id="busyoverlay"></div>' +
         '<div id="busybox"><img src="' + _config.images + 'busy32.gif" alt=""></div>'
       );
-      this._isOpen = true;
-      $('#busyoverlay, #busybox').show();
     },
 
     _render: function (type, message, header, callback, params, style) {
       this.close();
-      var dialogW = Math.max(window.innerWidth / 4, 300);
-
-      $(document.body).append(
-        '<div id="dialogoverlay"></div>' +
-        '<div id="dialogbox"><div>' +
-          '<div id="dialogboxhead"></div>' +
-          '<div id="dialogboxbody"></div>' +
-          '<div id="dialogboxfoot"></div>' +
-        '</div></div>'
-      );
+      this._ensureDom();
 
       var cfg = this._typeConfig(type, message, callback, params);
 
-      $('#dialogbox').css({ width: dialogW + 'px' });
-      $('#dialogboxhead').css('background-image', 'url(' + _config.images + cfg.image + ')').html(header);
-      $('#dialogboxbody').addClass(cfg.clase).html('<div id="dialogboxtext">' + cfg.text + '</div>');
+      $('#dialogbox').attr('class', type + 'Dialog');
+      $('#dialogboxicon').attr('src', _config.images + cfg.image);
+      $('#dialogboxtitle').text(header);
+      $('#dialogboxtext').html(cfg.text);
       $('#dialogboxfoot').html(cfg.foot);
       cfg.bindEvents && cfg.bindEvents();
 
-      this._open();
+      this._lastFocus = document.activeElement;
+      this._open('dialog');
+      $('#dialogoverlay, #dialogbox').show();
+      $('#dialogbox').find('input, button').first().trigger('focus');
       if (style === 'blink') {
         this._blinkId = setInterval(this._blinker, 1500);
       }
@@ -458,7 +521,7 @@
     _typeConfig: function (type, message, callback, params) {
       var self = this;
       var cb   = this._resolve(callback);
-      var cfg  = { text: message, foot: '', image: type + '32.png', clase: type + 'Body', bindEvents: null };
+      var cfg  = { text: message, foot: '', image: type + '32.png', bindEvents: null };
 
       switch (type) {
         case 'info':
@@ -475,7 +538,6 @@
 
         case 'confirm':
           cfg.image = 'question32.png';
-          cfg.clase = 'confirmBody';
           cfg.foot  = '<button type="button" id="dialogOk">'     + _t.buttons.yes + '</button> ' +
                       '<button type="button" id="dialogCancel">' + _t.buttons.no  + '</button>';
           cfg.bindEvents = function () {
@@ -485,14 +547,12 @@
             });
             $('#dialogCancel').on('click', function () {
               self.close();
-              if (cb) { cb(false); }
             });
           };
           break;
 
         case 'prompt':
           cfg.image = 'question32.png';
-          cfg.clase = 'promptBody';
           cfg.text  = message + ': <input id="prompt_value" placeholder="' + _t.prompt.placeholder + '">';
           cfg.foot  = '<button type="button" id="dialogOk">'     + _t.buttons.ok     + '</button> ' +
                       '<button type="button" id="dialogCancel">' + _t.buttons.cancel + '</button>';
@@ -514,22 +574,58 @@
 
         case 'process':
           cfg.image = 'process32.png';
-          cfg.clase = 'processBody';
           break;
       }
       return cfg;
     },
 
-    _open: function () {
+    _open: function (mode) {
       this._isOpen = true;
-      $('#dialogoverlay, #dialogbox').show();
+      this._mode   = mode;
+      if (_config.keyLock) { document.addEventListener('keydown', this._keyGuard, true); }
+      if (mode === 'dialog') { document.addEventListener('focusin', this._focusGuard, true); }
     },
 
     close: function () {
+      var mode = this._mode;
       this._isOpen = false;
-      $('#dialogbox, #busybox').hide().remove();
-      $('#dialogoverlay, #busyoverlay').hide().remove();
+      this._mode   = '';
+      document.removeEventListener('keydown', this._keyGuard, true);
+      document.removeEventListener('focusin', this._focusGuard, true);
+      $('#dialogoverlay, #dialogbox, #busyoverlay, #busybox').hide();
       if (this._blinkId) { clearInterval(this._blinkId); this._blinkId = 0; }
+      if (mode === 'dialog' && this._lastFocus && document.body.contains(this._lastFocus)) {
+        $(this._lastFocus).trigger('focus');
+      }
+      this._lastFocus = null;
+    },
+
+    // Busy: bloquea toda tecla. Diálogo: deja pasar las teclas dentro del cuadro,
+    // Tab/Shift+Tab ciclan entre sus campos y botones, y bloquea el resto.
+    _keyGuard: function (e) {
+      var box = document.getElementById('dialogbox');
+      if (_dialogs._mode === 'dialog' && e.key === 'Tab') {
+        var items = $(box).find('input, button').filter(':visible').get();
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        if (!items.length) { return; }
+        var i = items.indexOf(document.activeElement);
+        i = e.shiftKey ? (i <= 0 ? items.length - 1 : i - 1) : (i + 1) % items.length;
+        items[i].focus();
+        return;
+      }
+      if (_dialogs._mode === 'dialog' && box.contains(e.target)) { return; }
+      e.preventDefault();
+      e.stopImmediatePropagation();
+    },
+
+    // Si la página tiene su propia ventana modal abierta con "focus trap" (ej. un
+    // modal de un framework CSS), ese trap escucha focusin en document y devuelve
+    // el foco a su ventana. Cortar aquí los focusin del cuadro de diálogo evita
+    // que se entere y le quite el foco al diálogo de jqajaj.
+    _focusGuard: function (e) {
+      var box = document.getElementById('dialogbox');
+      if (box && box.contains(e.target)) { e.stopPropagation(); }
     },
 
     _blinker: function () {
@@ -584,7 +680,10 @@
   $.fieldValue = function (elem, successful) {
     var typ = elem.type, tag = elem.tagName.toLowerCase();
     if (typeof successful === 'undefined') { successful = true; }
-    if (successful && (typ === 'checkbox' || typ === 'radio')) {
+    if (successful && typ === 'radio') {
+      return elem.checked ? elem.value : null;
+    }
+    if (successful && typ === 'checkbox') {
       return elem.checked ? (elem.value || '1') : '0';
     }
     if (successful && (!elem.name || elem.disabled || typ === 'reset' || typ === 'button' ||
@@ -734,8 +833,20 @@
     },
 
     /**
-     * Envía un formulario por AJAX.
-     * @example APJ.APJSubmit('formId', 'guardar', extraParam)
+     * Igual que APJCall, pero sin mostrar el indicador "ocupado" (#busyoverlay) - para
+     * llamadas rápidas/locales donde el busy() no aporta nada, o que no deben
+     * bloquear el teclado mientras corren (ej. Tab disparado desde un onblur).
+     * Mismo comportamiento en todo lo demás.
+     * @example APJ.APJCallSilent('MiMetodo', param1, param2)
+     */
+    APJCallSilent: function () {
+      var args = Array.prototype.slice.call(arguments);
+      return _ajax.send({ action: '_APJCall', data: JSON.stringify(args) }, { busy: false });
+    },
+
+    /**
+     * Equivalente a APJSubmit: envía un formulario por AJAX.
+     * @example APJ.APJSubmit('formId', 'action', extraParam1, extraParam2)
      */
     APJSubmit: function (form, action) {
       var args      = Array.prototype.slice.call(arguments);
@@ -749,6 +860,32 @@
       return _ajax.send(params);
     },
 
+    /**
+     * Igual que APJSubmit, pero sin mostrar el indicador "ocupado" (#busyoverlay) - ver
+     * APJCallSilent. Misma firma exacta que APJSubmit.
+     * @example APJ.APJSubmitSilent('formId', 'action', extraParam1, extraParam2)
+     */
+    APJSubmitSilent: function (form, action) {
+      var args   = Array.prototype.slice.call(arguments);
+      action     = action || 'main';
+      var params = $('form#' + form).formToArray(true);
+      var hasAction = params.some(function (p) { return p.name === 'action'; });
+      if (!hasAction) { params.push({ name: 'action', value: action }); }
+      if (args.length > 2) {
+        params.push({ name: 'parameters', value: JSON.stringify(args.slice(2)) });
+      }
+      return _ajax.send(params, { busy: false });
+    },
+
+    /**
+     * Inicia un poll silencioso — llama un método PHP cada `interval` ms sin mostrar jBusy.
+     * @param {string}  method    Nombre del método PHP
+     * @param {number}  interval  Intervalo en ms (ej: 5000)
+     * @param {*}       params    Parámetros opcionales (array o cualquier valor JSON)
+     * @param {object}  options   { maxErrors: N, onError: 'silent'|'stop'|fn, immediate: bool }
+     * @example APJ.poll('checkMsgs', 5000, [roomId]);
+     * @example APJ.poll('keepAlive', 240000);
+     */
     poll: function (method, interval, params, options) {
       APJ.stopPoll(method);
       var opts = {
@@ -801,6 +938,8 @@
       window.jClose    = function ()            { _dialogs.close(); };
       window.APJCall   = function ()            { APJ.APJCall.apply(APJ, arguments); };
       window.APJSubmit = function ()            { APJ.APJSubmit.apply(APJ, arguments); };
+      window.APJCallSilent   = function ()      { APJ.APJCallSilent.apply(APJ, arguments); };
+      window.APJSubmitSilent = function ()      { APJ.APJSubmitSilent.apply(APJ, arguments); };
       window.jShowDown = APJ.jShowDown;
       return this;
     },

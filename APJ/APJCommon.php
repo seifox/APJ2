@@ -2,8 +2,21 @@
 /**
  * Common methods Trait<br>
  * Rasgo de métodos comunes
- * Version: 2.0.2412
+ * Version: 2.0.2609
  * Author: Ricardo Seiffert
+ * Cambios en 2.0.2609 (2): agregado isHttps() (protegido) - detección de
+ * HTTPS duplicada localmente en cada clase que la necesita (APJSession,
+ * APJController vía este trait, Helpers\Sendmail donde exista) en vez de
+ * una función global en init.php, que se retiró. Decisión explícita del
+ * usuario: prefiere la duplicación acotada a una función suelta fuera del
+ * namespace APJ\ que además no siempre se usa.
+ * Cambios en 2.0.2609: format() con tipo 'date'/'datetime'/'time'/'timestamp'
+ * ahora trata un string vacío ('') igual que NULL (retorna null) - antes
+ * caía en `new DateTime('')`, que PHP interpreta como "now", mostrando
+ * silenciosamente la fecha/hora actual para cualquier columna vacía (bug
+ * real: la grilla de ope_cierre.php de aerotac3 mostraba la misma fecha/hora
+ * de cierre en todos los vuelos, incluso los no cerrados, porque el SQL
+ * devuelve '' en vez de NULL para fecha_cierre cuando no hay cierre).
  */
 namespace APJ;
 use \stdClass;
@@ -48,13 +61,13 @@ trait APJCommon
                 }
                 break;
             case 'date':
-                return ($value === '0000-00-00' || $value === null) ? null : (new DateTime($value))->format($fmt['date']);
+                return ($value === '0000-00-00' || $value === null || $value === '') ? null : (new DateTime($value))->format($fmt['date']);
             case 'datetime':
-                return ($value === '0000-00-00 00:00:00' || $value === null) ? null : (new DateTime($value))->format($fmt['datetime']);
+                return ($value === '0000-00-00 00:00:00' || $value === null || $value === '') ? null : (new DateTime($value))->format($fmt['datetime']);
             case 'time':
-                return ($value === null) ? null : (new DateTime($value))->format($fmt['time']);
+                return ($value === null || $value === '') ? null : (new DateTime($value))->format($fmt['time']);
             case 'timestamp':
-                return ($value == 0 || $value === null) ? null : (new DateTime($value))->format($fmt['timestamp']);
+                return ($value == 0 || $value === null || $value === '') ? null : (new DateTime($value))->format($fmt['timestamp']);
             case 'smallint':
             case 'mediumint':
             case 'integer':
@@ -118,6 +131,30 @@ trait APJCommon
             error_log("Error verifying date: " . $e->getMessage());
             return false; // Invalid
         }
+    }
+
+    /**
+    * Detects whether the current request arrived over HTTPS, accounting
+    * for the production reverse proxy (cPanel/Nginx) that terminates TLS
+    * and forwards to the app server in plain HTTP - $_SERVER['HTTPS'] is
+    * only set when the app server itself sees the TLS connection directly.
+    * Duplicated locally in each class that needs it (APJSession,
+    * APJController via this trait, Helpers\Sendmail where it exists)
+    * instead of a global init.php function, since it's only needed in a
+    * handful of narrowly-scoped places.<br>
+    * Detecta si el request actual llegó por HTTPS, contemplando el proxy
+    * reverso de producción (cPanel/Nginx) que termina TLS y reenvía en
+    * HTTP plano hacia el servidor de la app - $_SERVER['HTTPS'] solo queda
+    * seteado cuando el servidor ve la conexión TLS directamente. Duplicado
+    * localmente en cada clase que lo necesita (APJSession, APJController
+    * vía este trait, Helpers\Sendmail donde exista) en vez de una función
+    * global en init.php, ya que solo hace falta en unos pocos lugares
+    * puntuales.
+    * @return bool
+    */
+    protected function isHttps(): bool
+    {
+        return isset($_SERVER['HTTPS']) || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
     }
 
     /**

@@ -21,6 +21,8 @@
       .apjt-dev  { background: #e8a800; color: #fff; padding: 2px 8px; border-radius: 3px; font-size: 11px; }
       .apjt-prod { background: #2e7d32; color: #fff; padding: 2px 8px; border-radius: 3px; font-size: 11px; }
       .apjt-unk  { background: #888;    color: #fff; padding: 2px 8px; border-radius: 3px; font-size: 11px; }
+      .apjt-view    { background: #5c6bc0; color: #fff; padding: 2px 8px; border-radius: 3px; font-size: 11px; }
+      .apjt-missing { background: #c62828; color: #fff; padding: 2px 8px; border-radius: 3px; font-size: 11px; }
       .apjt-actions { margin: 10px 0; display: flex; gap: 8px; }
       #apjt-result { margin-top: 14px; border-top: 1px solid #ddd; padding-top: 8px; }
       .apjt-ok  { color: #2e7d32; margin: 2px 0; }
@@ -41,11 +43,16 @@
       &nbsp;|&nbsp; <strong>Promote</strong>: defineStructure() only
       &nbsp;|&nbsp; <strong>+Doc</strong>: + documentation comment
       &nbsp;|&nbsp; <strong>+Doc+Create</strong>: + createTableIfNotExists()
+      &nbsp;|&nbsp; <strong>Doc Only</strong>: documentation comment only, stays in DEV
+      &nbsp;|&nbsp; <span class="apjt-view">VIEW</span>-tagged models only get Doc Only - a DB view's shape is defined by its own CREATE VIEW, not something to hardcode
+      &nbsp;|&nbsp; <span class="apjt-missing">MISSING</span>: setTable() target doesn't exist in this DB - no actions offered
     </p>
     <div class="apjt-actions">
       <button onclick="APJCall('promoteAll',false,false)">Promote All</button>
       <button onclick="APJCall('promoteAll',true,false)">Promote All + Doc</button>
       <button onclick="APJCall('promoteAll',true,true)">Promote All + Doc + Create</button>
+      &nbsp;|&nbsp;
+      <button onclick="APJCall('docOnlyAll')">Doc Only All</button>
       &nbsp;|&nbsp;
       <button onclick="APJCall('demoteAll')">Demote All</button>
     </div>

@@ -2,8 +2,25 @@
 /**
  * APJPDO Class for PDO management<br>
  * Clase para la gestión de PDO
- * Version: 2.0.2412
+ * Version: 2.0.2609
  * Author: Ricardo Seiffert
+ *
+ * Cambios en 2.0.2609 (25-ago-2026):
+ * - getValue(): trim($value) no protegía contra $value===null - una
+ *   columna nullable asignada a null (ej. anexo/numero_documento vía
+ *   __set() con trim=true) disparaba un deprecation de PHP 8.1
+ *   (trim(): Passing null ... is deprecated). Encontrado portando
+ *   com_pagosgastos.php/sp_pagosgastos.php a gestion3.
+ *
+ * Cambios en 2.0.2608 (18-ago-2026):
+ * - Corregido execute()/query(): usaban strtok($query," ") para detectar la
+ *   primera palabra de la consulta, lo que se rompe si esa palabra viene
+ *   seguida de un salto de línea en vez de un espacio literal (SQL en varias
+ *   líneas). En execute() esto hacía que la consulta NUNCA se ejecutara
+ *   (retornaba false sin correr nada); en query() el conteo de filas
+ *   afectadas quedaba en la variable equivocada. Reemplazado por _first(),
+ *   que ya normalizaba el espacio en blanco correctamente y existía sin
+ *   usarse para esto.
  */
 namespace APJ;
 use APJ\APJLog;
@@ -230,7 +247,11 @@ class APJPDO
     public function execute(string $query, $params = null): int|false
     {
         $query = trim($query);
-        $firstWord = strtolower(strtok($query, " "));
+        // No usar strtok($query," "): rompe si la palabra clave viene
+        // seguida de un salto de línea en vez de un espacio literal (SQL en
+        // varias líneas, muy común) - _first() normaliza todo el espacio en
+        // blanco primero.
+        $firstWord = $this->_first($query);
         if (in_array($firstWord, $this->_ACTION, true)) {
             $this->_prepare($query, $params);
             if ($this->error === false) {
@@ -276,7 +297,8 @@ class APJPDO
         try {
             $this->_setNoError();
             $this->_Qry = $this->_Pdo->query($query);
-            $firstWord = strtolower(strtok($query, " "));
+            // Ver nota en execute() - no usar strtok($query," ").
+            $firstWord = $this->_first($query);
             if (in_array($firstWord, $this->_ACTION, true)) {
                 return $this->affected = $this->_Qry->rowCount();
             } else {
@@ -419,7 +441,9 @@ class APJPDO
     */
     public function getValue($value,string $type='none',bool $trim=false): mixed 
     {
-        $newValue=($trim)?trim($value):$value;
+        // $value puede llegar null en una columna nullable (ej. anexo,
+        // numero_documento) - trim(null) esta deprecado desde PHP 8.1.
+        $newValue=($trim && $value!==null)?trim($value):$value;
         $type=strtolower($type);
         switch ($type) {
             case "text":

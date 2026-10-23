@@ -4,6 +4,15 @@
  * Clase Generadora de Html
  * Version: 2.0.2601
  * Author: Ricardo Seiffert
+ *
+ * $gen es un recurso OPCIONAL - el controlador que lo use debe declararlo
+ * como propiedad propia antes de instanciarlo, por ejemplo:
+ *   private ?APJHtmlGen $gen = null;
+ * No declararlo (y solo hacer $this->gen = new APJHtmlGen()) crea una
+ * "dynamic property", lo que en PHP 8.2+ emite un Deprecated warning. Si esa
+ * asignación ocurre en el constructor del controlador ANTES de llamar a
+ * parent::__construct() (que es donde arranca ob_start()), el warning se
+ * emite crudo y corrompe la respuesta JSON de cualquier acción AJAX.
  */
 namespace APJ;
 

@@ -20,20 +20,34 @@ class APJToolController extends APJController
         $models = APJModelTool::scan(MODELS);
         $out = '';
         foreach ($models as $m) {
-            $badge = match($m['mode']) {
-                'dev'   => '<span class="apjt-dev">DEV</span>',
-                'prod'  => '<span class="apjt-prod">PROD</span>',
-                default => '<span class="apjt-unk">?</span>',
+            $isView = $m['isView'] ?? false;
+            $exists = $m['exists'] ?? true;
+            $badge = match(true) {
+                $m['mode'] === 'dev' && !$exists => '<span class="apjt-dev">DEV</span> <span class="apjt-missing">MISSING</span>',
+                $m['mode'] === 'dev' && $isView  => '<span class="apjt-dev">DEV</span> <span class="apjt-view">VIEW</span>',
+                $m['mode'] === 'dev'             => '<span class="apjt-dev">DEV</span>',
+                $m['mode'] === 'prod'            => '<span class="apjt-prod">PROD</span>',
+                default                           => '<span class="apjt-unk">?</span>',
             };
             $table = htmlspecialchars($m['table'] ?? '—');
             $class = htmlspecialchars($m['class'] ?? '—');
             $file  = htmlspecialchars($m['file']);
             $actions = '';
             $fe = addslashes($m['file']);
-            if ($m['mode'] === 'dev') {
+            if ($m['mode'] === 'dev' && !$exists) {
+                // setTable() apunta a una tabla/vista que no existe en esta
+                // BD - nada que documentar ni promover, así que no se ofrece
+                // ningún botón (todos fallarían igual).
+            } elseif ($m['mode'] === 'dev' && $isView) {
+                // Una vista de BD no se puede "promover" (su forma la define
+                // su propio CREATE VIEW, no algo para hardcodear en PHP) ni
+                // tiene sentido un createTableIfNotExists() sobre ella.
+                $actions = "<button onclick=\"APJCall('docOnly','{$fe}')\">Doc Only</button>";
+            } elseif ($m['mode'] === 'dev') {
                 $actions = "<button onclick=\"APJCall('promoteModel','{$fe}',false,false)\">Promote</button> "
                          . "<button onclick=\"APJCall('promoteModel','{$fe}',true,false)\">+ Doc</button> "
-                         . "<button onclick=\"APJCall('promoteModel','{$fe}',true,true)\">+ Doc + Create</button>";
+                         . "<button onclick=\"APJCall('promoteModel','{$fe}',true,true)\">+ Doc + Create</button> "
+                         . "<button onclick=\"APJCall('docOnly','{$fe}')\">Doc Only</button>";
             } elseif ($m['mode'] === 'prod') {
                 $actions = "<button onclick=\"APJCall('demoteModel','{$fe}')\">Demote</button>";
             }
@@ -68,6 +82,60 @@ class APJToolController extends APJController
             $this->jQ("#apjt-result")->prepend("<p class=\"apjt-err\">&#10007; {$file}: {$error}</p>");
         }
         // Refresh the full table after any promotion
+        $this->jQ("#apjt-body")->html($this->listModels());
+    }
+
+    /**
+     * Adds/updates ONLY the documentation comment on a single dev-mode model
+     * (AJAX). Does not promote — setTable() stays as-is.
+     * @param string $file Filename only (no path)
+     */
+    public function docOnly(string $file): void
+    {
+        $file = basename($file);
+        $path = MODELS . DIRECTORY_SEPARATOR . $file;
+        if (!file_exists($path)) {
+            $this->jError("File not found: {$file}");
+            return;
+        }
+        $result = APJModelTool::addDoc($path);
+        if ($result['success']) {
+            $table = htmlspecialchars($result['table'] ?? '');
+            $msg = "&#10003; {$file} (table: {$table}) documentation updated (still DEV).";
+            $this->jQ("#apjt-result")->prepend("<p class=\"apjt-ok\">{$msg}</p>");
+        } else {
+            $error = htmlspecialchars($result['error'] ?? 'Unknown error');
+            $this->jQ("#apjt-result")->prepend("<p class=\"apjt-err\">&#10007; {$file}: {$error}</p>");
+        }
+        $this->jQ("#apjt-body")->html($this->listModels());
+    }
+
+    /**
+     * Adds/updates the documentation comment on all dev-mode models (AJAX).
+     * Does not promote any of them.
+     */
+    public function docOnlyAll(): void
+    {
+        $results = APJModelTool::addDocAll(MODELS);
+        if (empty($results)) {
+            $this->jQ("#apjt-result")->prepend('<p class="apjt-ok">No models in DEV mode.</p>');
+            return;
+        }
+        $ok = $fail = 0;
+        $html = '';
+        foreach ($results as $r) {
+            $file = htmlspecialchars($r['file']);
+            if ($r['success']) {
+                $table = htmlspecialchars($r['table'] ?? '');
+                $html .= "<p class=\"apjt-ok\">&#10003; {$file} (table: {$table})</p>";
+                $ok++;
+            } else {
+                $error = htmlspecialchars($r['error'] ?? '');
+                $html .= "<p class=\"apjt-err\">&#10007; {$file}: {$error}</p>";
+                $fail++;
+            }
+        }
+        $this->jQ("#apjt-result")->prepend("<p><strong>Result: {$ok} documented, {$fail} errors.</strong></p>" . $html);
         $this->jQ("#apjt-body")->html($this->listModels());
     }
 

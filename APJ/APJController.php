@@ -2,8 +2,50 @@
 /**
  * APJ's parent Controller
  * Controlador padre de APJ
- * Version: 2.0.2511
+ * Version: 2.0.2611
  * Author: Ricardo Seiffert
+ * Cambios en 2.0.2611 (2): absoluteUrl() usa $this->isHttps() (método
+ * protegido de APJCommon, este controlador ya usa ese trait) en vez de la
+ * función global isHttps() de init.php, que se retiró - decisión
+ * explícita del usuario, prefiere la detección de HTTPS duplicada
+ * localmente en cada clase que la necesita antes que una función suelta
+ * fuera del namespace APJ\.
+ * Cambios en 2.0.2611: eliminada la constante intermedia que normalizaba
+ * ROOTURL para concatenar en URLs (equivalía exactamente a
+ * rtrim(ROOTURL,'/') - "" cuando el sitio corre en la raíz del dominio,
+ * sin cambios en cualquier otro caso). render() y absoluteUrl() ahora
+ * calculan rtrim(ROOTURL,'/') directo, sin una segunda constante casi-
+ * anagrama de ROOTURL que se prestaba a confusión.
+ * Cambios en 2.0.2610: nuevo método absoluteUrl($path) - reemplaza el
+ * patrón "{$protocolo}://".DOMAIN."{root}"."/ruta" que estaba duplicado en
+ * cada controlador que arma un link absoluto (email/QR/verificación de
+ * ticket), usando la nueva función global isHttps() (ver init.php) en vez
+ * de repetir la detección de protocolo a mano en cada lugar.
+ * Cambios en 2.0.2610 (2): absoluteUrl() ahora normaliza la unión
+ * DOMAIN+root+$path (ltrim+"/" de $path) en vez de confiar en que quien
+ * llama siempre pase $path con "/" inicial - evita doble barra o barra
+ * faltante sin importar cómo se invoque.
+ * Cambios en 2.0.2609: render() armaba el <base href="..."> con
+ * (ROOTURL=='/')?'':ROOTURL - eso omite el DOMAIN configurado y rompe los
+ * links generados cuando el sitio corre detrás del dominio de producción
+ * real. Ver project_gestion3_futuro_dominio_produccion.
+ * Cambios en 2.0.2608: getParameters() usaba str_replace+explode manual en
+ * vez de json_decode() real - perdía comillas y cortaba en cada coma de
+ * cualquier parámetro con HTML/texto con comas (mismo bug encontrado y
+ * corregido primero en APJ v1, ver Libs/APJ/APJController.class.php v1.9.260812).
+ * Cambios en 2.0.2608 (2): _ApjReplace()/_APJCall() - los tags APJ:{...}
+ * nunca le quitaban las comillas a un argumento string (APJ:{m('PESOS')}
+ * pasaba el literal 'PESOS' con comillas, nunca calzaba contra datos
+ * reales), y sin argumentos se pasaba null explícito en vez de omitir el
+ * parámetro, así que tampoco se disparaba nunca un valor por defecto de
+ * PHP. Encontrado depurando com_gastos.php (gestion3).
+ * Cambios en 2.0.2608 (3): nuevos métodos APJSubmit($form,$action,...$args)
+ * y APJCall($method,...$args) - disparan un APJSubmit/APJCall real del
+ * lado del cliente desde el controlador, encolando una acción nativa de
+ * jQ (misma familia que jInfo/jConfirm, ver jQ.php) en vez de armar un
+ * jScript() a mano. Idea del usuario, motivada por com_creavuelo.php
+ * (gestion3), que hacía unset($this->Form) para forzar "sin filtro" en
+ * vez de simplemente reenviar el formulario de filtros tal cual estaba.
  */
 namespace APJ;
 use APJ\jQSelector;
@@ -135,9 +177,18 @@ class APJController
             $url = VIEWS . DIRECTORY_SEPARATOR . $page;
             $html = $this->_getContent($url);
             if ($html) {
-                $root=(ROOTURL=='/')?'':ROOTURL;
+                $root = rtrim(ROOTURL, '/');
                 $replace = '<head><base href="' . $root . '/">';
-                $html = str_replace('<head>', $replace, $html);
+                // Solo la primera ocurrencia (el <head> real de la vista, siempre
+                // estático y al principio del archivo) - un str_replace() normal
+                // reemplazaba CUALQUIER "<head>" en toda la página ya renderizada,
+                // incluyendo uno que apareciera como texto dentro de un string JS
+                // generado por un controlador (ej. com_ingresomensual.php armando el
+                // HTML de una exportación a Excel), corrompiendo ese string.
+                $posHead = strpos($html, '<head>');
+                if ($posHead !== false) {
+                    $html = substr_replace($html, $replace, $posHead, strlen('<head>'));
+                }
                 if ($return) {
                     return $html;
                 } else {
@@ -153,6 +204,34 @@ class APJController
                 }
             }
         }
+    }
+
+    /**
+     * Builds an absolute URL for the current environment (protocol +
+     * DOMAIN + normalized root), from a site-relative path. Replaces the
+     * "{$protocol}://" . DOMAIN . ROOTURL . "/path" pattern that used to
+     * be duplicated in every controller building an absolute link (email,
+     * QR, ticket verification).<br>
+     * Arma una URL absoluta para el entorno actual (protocolo + DOMAIN +
+     * raíz normalizada), a partir de una ruta relativa al sitio. Reemplaza
+     * el patrón "{$protocolo}://" . DOMAIN . ROOTURL . "/ruta" que estaba
+     * duplicado en cada controlador que arma un link absoluto (email, QR,
+     * verificación de ticket). No usar DOMAIN/ROOTURL directo para esto,
+     * usar este método.
+     * @param string $path Ruta relativa al sitio, con "/" inicial (ej. "/images/logo.gif")
+     * @return string URL absoluta completa
+     */
+    protected function absoluteUrl(string $path = ''): string
+    {
+        $protocol = $this->isHttps() ? 'https' : 'http';
+        // Normaliza ambos lados de la unión (nunca doble barra ni barra
+        // faltante): ROOTURL vale "/" en la raíz del dominio (correcto
+        // como path de cookie, ver login.php), rtrim lo deja en "" para
+        // concatenar sin duplicar la barra; $path se normaliza igual sin
+        // importar si quien llama la incluyó o no.
+        $root = rtrim(ROOTURL, '/');
+        $path = $path !== '' ? '/' . ltrim($path, '/') : '';
+        return "{$protocol}://" . DOMAIN . $root . $path;
     }
 
     /**
@@ -191,10 +270,8 @@ class APJController
      */
     private function getParameters(string $params): array
     {
-        $string = trim($params, '[');
-        $string = trim($string, ']');
-        $string = str_replace(['"', "'"], '', $string);
-        return explode(',', $string);
+        $result = json_decode($params, true);
+        return is_array($result) ? $result : [];
     }
 
     /**
@@ -404,14 +481,20 @@ class APJController
                     $data = array_slice($params, 1);
                 }
                 if (method_exists($this, $func)) {
-                    if (!$this->useParametersAsArray && is_array($data)) {
-                        return call_user_func_array([$this, $func], $data);
-                    } else {
-                        return $this->{$func}($data);
+                    if ($data === null) {
+                        // Sin parámetros: se omite el argumento por completo
+                        // para que el valor por defecto de PHP del método sí
+                        // se dispare (antes se pasaba null explícito, que
+                        // nunca activa un default sin type hint nullable).
+                        return $this->{$func}();
                     }
+                    if (!$this->useParametersAsArray) {
+                        return call_user_func_array([$this, $func], $data);
+                    }
+                    return $this->{$func}($data);
                 }
             }
-        } catch (Exception $e) {
+        } catch (\Throwable $e) {
             $this->_ErrorLog("Error in _APJCall: " . $e->getMessage());
             return null;
         }
@@ -432,7 +515,7 @@ class APJController
                 $html = $this->_ApjReplace($html);
             }
             return $html;
-        } catch (Exception $e) {
+        } catch (\Throwable $e) {
             $this->_ErrorLog("Error in _getContent: " . $e->getMessage());
             return null;
         }
@@ -488,6 +571,32 @@ class APJController
     }
 
     /**
+     * Removes one matching pair of surrounding quotes (' or ") from a raw
+     * APJ:{...} template argument.<br>
+     * Quita un par de comillas envolventes (' o ") de un argumento crudo de
+     * APJ:{...}, para que APJ:{metodo('PESOS')} pase el string limpio PESOS
+     * en vez del literal 'PESOS' (comillas incluidas) - el parser nunca las
+     * sacaba, así que un argumento con comillas jamás calzaba contra datos
+     * reales. Argumentos sin comillas (el estilo ya soportado, ej.
+     * APJ:{estimaciones(fondo A)}) pasan intactos.
+     * @param string $value
+     * @return string
+     */
+    private function _stripTagQuotes(string $value): string
+    {
+        $value = trim($value);
+        $len = strlen($value);
+        if ($len >= 2) {
+            $first = $value[0];
+            $last = $value[$len - 1];
+            if (($first === "'" && $last === "'") || ($first === '"' && $last === '"')) {
+                return substr($value, 1, -1);
+            }
+        }
+        return $value;
+    }
+
+    /**
      * Replaces the APJ: tags in the view with the data returned by the given method and returns the new html<br>
      * Reemplaza las etiquetas APJ: en la vista por los datos devueltos por el método dado y devuelve el nuevo html
      * @param string $html
@@ -507,7 +616,7 @@ class APJController
                     $func = substr($allFunc, 0, strpos($allFunc, '('));
                     $params = $this->getStringBetween($allFunc, '(', ')', 0);
                     if ($params) {
-                        $paramArray = explode(',', $params);
+                        $paramArray = array_map([$this, '_stripTagQuotes'], explode(',', $params));
                         if (count($paramArray)) {
                             array_unshift($paramArray, $func);
                         } else {
@@ -525,7 +634,7 @@ class APJController
                 }
                 $startPos += $len;
             }
-        } catch (Exception $e) {
+        } catch (\Throwable $e) {
             $this->_ErrorLog("Error in _ApjReplace: " . $e->getMessage());
         }
         return $html;
@@ -709,6 +818,52 @@ class APJController
             jQ::Script($script);
         } catch (Exception $e) {
             $this->_ErrorLog("Error in jScript: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Ejecuta un APJSubmit(form, action, ...args) real del lado del
+     * cliente, encolando una acción nativa de jQ (misma familia que
+     * jInfo/jConfirm) en vez de armar un string para jScript().<br>
+     * Runs a real client-side APJSubmit(form, action, ...args) by queueing
+     * a native jQ action (same family as jInfo/jConfirm), instead of
+     * hand-building a jScript() string.
+     * Útil, por ejemplo, para reaplicar los filtros que el usuario ya
+     * tiene seleccionados en un formulario de consulta, en vez de
+     * recalcular la lista del lado del servidor con el Form actual (o
+     * forzarlo a null a mano).
+     * @example $this->APJSubmit('filtros', 'filtraVuelos');
+     * @param string $form Id del formulario a enviar
+     * @param string $action Método del controlador a invocar
+     * @param mixed ...$args Argumentos adicionales opcionales
+     */
+    protected function APJSubmit(string $form, string $action, ...$args)
+    {
+        try {
+            return jQ::APJSubmit($form, $action, $args);
+        } catch (Exception $e) {
+            $this->_ErrorLog("Error in APJSubmit: " . $e->getMessage());
+            return jQ::$jQ;
+        }
+    }
+
+    /**
+     * Ejecuta un APJCall(method, ...args) real del lado del cliente,
+     * encolando una acción nativa de jQ - sin formulario, solo el método
+     * y argumentos.<br>
+     * Runs a real client-side APJCall(method, ...args) by queueing a
+     * native jQ action - no form, just the method and arguments.
+     * @example $this->APJCall('refrescar', $vuelo);
+     * @param string $method Método del controlador a invocar
+     * @param mixed ...$args Argumentos adicionales opcionales
+     */
+    protected function APJCall(string $method, ...$args)
+    {
+        try {
+            return jQ::APJCall($method, $args);
+        } catch (Exception $e) {
+            $this->_ErrorLog("Error in APJCall: " . $e->getMessage());
+            return jQ::$jQ;
         }
     }
 

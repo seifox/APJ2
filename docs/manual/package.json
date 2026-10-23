@@ -1,0 +1,13 @@
+{
+  "name": "apj-manual",
+  "version": "2.1.2610",
+  "private": true,
+  "description": "Generador del Manual de referencia de APJ (Word + PDF)",
+  "scripts": {
+    "build": "node build.js && node pdf.js"
+  },
+  "dependencies": {
+    "docx": "9.5.1",
+    "playwright-core": "1.63.0"
+  }
+}
