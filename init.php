@@ -10,7 +10,7 @@ define("CONTROLLERS", APP);
 define("MODELS", APP . "/Models");
 define("VIEWS", APP . "/Views");
 define("HELPERS", APP . "/Helpers");
-define("VENDORS", APP . "/Vendor");
+define("VENDORS", APP . "/vendor");
 define("IMAGES", APP . "/images");
 
 if (DEVELOPMENT) {

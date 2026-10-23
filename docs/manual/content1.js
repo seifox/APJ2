@@ -36,7 +36,7 @@ module.exports = [
     ['Inicio de la vista', '`var url = ...; var timeout = ...;`', '`APJ.init(APJ:{APJInit()}).exposeGlobals();`'],
     ['Respuesta JSON', 'Propiedades dinámicas', '`jQAction` con `JsonSerializable`'],
     ['Logs', '`Libs/APJ/APJPDO_logs/`', '`APJ/Logs/`'],
-    ['Vendor (Composer)', 'Opcional', 'Obligatorio (`Vendor/autoload.php`)'],
+    ['Vendor (Composer)', 'Opcional', 'Obligatorio (`vendor/autoload.php`)'],
   ] },
   { t: 'h3', x: 'Versión 2.1' },
   { t: 'p', x: 'La versión 2.1 prepara el framework para PHP 8.5 sin cambiar su API: un proyecto escrito para 2.0 funciona igual en 2.1. Se probó el núcleo completo con PHP 8.5.12 y 8.3.15, con todos los avisos activados (E_ALL), sin deprecaciones ni advertencias. Los cambios son:' },
@@ -60,7 +60,7 @@ module.exports = [
   { t: 'ul', items: [
     'Servidor web Apache (o compatible) con **PHP 8.1 o superior**; recomendado PHP 8.3 o 8.5. Extensiones: PDO con `pdo_mysql`, `mbstring` e `iconv`.',
     '**MySQL o MariaDB** con el motor InnoDB (necesario para las transacciones). Con un DSN propio se pueden usar otras bases compatibles con PDO.',
-    '**Composer**: el framework exige el archivo `Vendor/autoload.php`, aunque no use librerías de terceros.',
+    '**Composer**: el framework exige el archivo `vendor/autoload.php`, aunque no use librerías de terceros.',
     'Un navegador actualizado (Chrome, Edge, Firefox o Safari).',
     'Conocimientos básicos de PHP orientado a objetos, HTML, CSS, jQuery y SQL.',
     'Un editor de código o IDE, por ejemplo Visual Studio Code o NuSphere PhpED.',
@@ -70,13 +70,13 @@ module.exports = [
   { t: 'p', x: 'La instalación es manual:' },
   { t: 'ol', items: [
     'Descargue el framework desde https://github.com/seifox/APJ2 y copie el contenido en la carpeta de su proyecto.',
-    'Verifique que existan la carpeta `APJ`, el archivo `init.php` y las carpetas `Models`, `Views`, `Helpers` y `Vendor` (esta última con su `autoload.php` de Composer).',
+    'Verifique que existan la carpeta `APJ`, el archivo `init.php` y las carpetas `Models`, `Views`, `Helpers` y `vendor` (esta última creada por Composer, con su `autoload.php`).',
     'Edite `init.php` (ver la tabla siguiente).',
     'Edite `APJ/APJPDO.ini.php` con los datos de conexión a la base de datos.',
     'Abra el proyecto en el navegador: http://localhost/<carpeta>/',
   ] },
   { t: 'h2', x: 'El archivo init.php' },
-  { t: 'p', x: 'Cada controlador lo carga con `require_once("init.php");`. Define las constantes de la aplicación, registra el auto-cargador de clases y carga `Vendor/autoload.php`.' },
+  { t: 'p', x: 'Cada controlador lo carga con `require_once("init.php");`. Define las constantes de la aplicación, registra el auto-cargador de clases y carga `vendor/autoload.php`.' },
   { t: 'table', head: ['Constante / variable', 'Uso'], widths: [2900, 6100], rows: [
     ['`DEVELOPMENT`', '`true` en desarrollo (muestra todos los errores y usa `$domain`/`$rootUrl` de desarrollo); `false` en producción.'],
     ['`APPNAME`', 'Nombre de la aplicación. También es el nombre (cifrado) de la sesión.'],
@@ -111,7 +111,7 @@ module.exports = [
   ] },
 
   { t: 'h2', x: 'Las carpetas de su aplicación' },
-  { t: 'code', x: 'mi_aplicacion/\n├── APJ/              Núcleo del framework\n│   ├── css/          jqajaj.css (aspecto de los diálogos)\n│   ├── images/       Íconos de los diálogos y del indicador de espera\n│   ├── jQuery/       Copia local de jQuery\n│   ├── js/           jqajaj.js y su versión multilenguaje\n│   └── Logs/         Registro diario de errores (AAAA-MM-DD.txt)\n├── Helpers/          Clases auxiliares (namespace Helpers\\)\n├── Models/           Modelos, uno por tabla (namespace Models\\)\n├── Vendor/           Librerías de Composer (autoload.php)\n├── Views/            Vistas HTML\n├── css/, images/     Estilos e imágenes de las vistas\n├── init.php          Constantes y arranque\n├── apjtool.php       Herramienta de modelos (solo desarrollo)\n└── controlador.php   Cada controlador va en la raíz del proyecto' },
+  { t: 'code', x: 'mi_aplicacion/\n├── APJ/              Núcleo del framework\n│   ├── css/          jqajaj.css (aspecto de los diálogos)\n│   ├── images/       Íconos de los diálogos y del indicador de espera\n│   ├── jQuery/       Copia local de jQuery\n│   ├── js/           jqajaj.js y su versión multilenguaje\n│   └── Logs/         Registro diario de errores (AAAA-MM-DD.txt)\n├── Helpers/          Clases auxiliares (namespace Helpers\\)\n├── Models/           Modelos, uno por tabla (namespace Models\\)\n├── vendor/           Librerías de Composer (autoload.php)\n├── Views/            Vistas HTML\n├── css/, images/     Estilos e imágenes de las vistas\n├── init.php          Constantes y arranque\n├── apjtool.php       Herramienta de modelos (solo desarrollo)\n└── controlador.php   Cada controlador va en la raíz del proyecto' },
   { t: 'h2', x: 'Contenido de la carpeta APJ' },
   { t: 'table', head: ['Archivo', 'Descripción'], widths: [2900, 6100], rows: [
     ['`APJAutoload.php`', 'Auto-cargador de clases por namespace.'],
