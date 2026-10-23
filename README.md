@@ -19,8 +19,8 @@
 
 ### Instalación:
 >Por ahora la instalación es manual, luego implementare la instalación por medio de “Composer”
-1. Bajar el framework y copiar el contenido de APJ en la carpeta para su proyecto.
-1. Deben estar las carpetas Libs, Models, Views, Helpers, Vendor (opcional) y el archivo init.php
+1. Bajar el framework desde https://github.com/seifox/APJ2 y copiar su contenido en la carpeta de su proyecto.
+1. Deben estar la carpeta APJ (núcleo del framework; en APJ 1.x era Libs/APJ), las carpetas Models, Views y Helpers, el archivo init.php y la carpeta de Composer con su autoload.php (obligatoria; su ubicación la define la constante VENDORS de init.php)
 1. Editar el archivo init.php
 	1. Modificar la constante DEVELOPMENT para definir si se encuentra en modo de desarrollo o producción
     1. Modificar la constante APPNAME por el nombre de su aplicación
@@ -28,19 +28,20 @@
     1. Modificar la variable $domain con el nombre del dominio que utilizara en producción. Deje _localhost_ como está, es para desarrollo.
     1. Modificar la constante LOGIN para definir el controlador de acceso a su aplicación
     1. Modificar la constante TIMEZONE para definir la zona horaria, si es que lo requiere
-    1. Opcionalmente puede cambiar los formatos de visualización de la constante FORMAT
+    1. Opcionalmente puede cambiar los formatos de visualización de la constante FORMATS
 	   1. _int_: Enteros (N° de decimales, separador de decimales, separador de miles)
 	   1. _decimal_: Decimales (N° de decimales, separador de decimales, separador de miles)
 	   1. _date_: Fecha (formato de PHP)
 	   1. _datetime_: Fecha y hora (formato de PHP)
 	   1. _time_: Hora (formato de PHP)
-	   1: _timestamp_: Fecha y hora formato unix (formato de PHP)
-1. Editar el archivo Libs/APJ/APJPDO.ini (archivo de configuración para el acceso a la base de datos)
+	   1. _timestamp_: Fecha y hora formato unix (formato de PHP)
+	   1. _booleanTrue_ / _booleanFalse_: Texto para mostrar un booleano (por ejemplo "Si" y "No")
+1. Editar el archivo APJ/APJPDO.ini.php (archivo de configuración para el acceso a la base de datos)
 	1. Cambie el valor de user, por la de un usuario válido, que tenga acceso a mostrar la estructura de las tablas (SHOW FULL COLUMNS FROM), No es obligatorio, pero en desarrollo es muy útil.
     1. Cambie el valor de password por una contraseña válida. Si la contraseña tiene símbolos como $, agregue comillas simples a la contraseña.
     1. Cambie el valor de dbname por en nombre de su base de datos.
     1. Opcionalmente cambie charset
->Eso es todo lo que necesita para comenzar.
+>Eso es todo lo que necesita para comenzar. Para el detalle completo vea el "MANUAL DE REFERENCIA DE APJ 2" (.pdf o .docx) en la raíz del repositorio.
 
 ## Autor:
 >**Ricardo Seiffert**
