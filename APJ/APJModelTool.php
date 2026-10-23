@@ -2,8 +2,13 @@
 /**
  * APJModelTool — Development-to-production model promotion tool for APJ2
  * Promotes model files from dev mode (setTable) to production mode (defineStructure).
- * Version: 2.0.2610
+ * Version: 2.1.2610
  * Author: Ricardo Seiffert
+ * Cambios en 2.1.2610 (APJ 2.1, PHP 8.5): scan() calculaba 'isView' con
+ * $objects[$key] aunque $key fuera null (modelo con setTable($variable)) y
+ * aunque la clave no existiera (sin acceso a information_schema) - null
+ * como índice de array está deprecado en PHP 8.5, y la clave inexistente
+ * daba un warning. Ahora es null-safe.
  * Cambios en 2.0.2608: nuevos addDoc()/addDocAll() - insertan/actualizan solo
  * el comentario de documentación de un modelo en modo DEV, sin promoverlo
  * (setTable() se mantiene, no se agrega defineStructure()). Idea del usuario.
@@ -74,7 +79,9 @@ class APJModelTool
                 'table'  => $table,
                 'mode'   => $mode,
                 'exists' => $exists,
-                'isView' => $exists && $objects[$key],
+                // $key puede ser null (setTable($variable)) - usar null como
+                // índice de array está deprecado desde PHP 8.5.
+                'isView' => $exists && $key !== null && ($objects[$key] ?? false),
             ];
         }
         usort($result, fn($a, $b) => strcmp($a['file'], $b['file']));

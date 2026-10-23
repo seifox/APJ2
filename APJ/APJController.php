@@ -2,8 +2,11 @@
 /**
  * APJ's parent Controller
  * Controlador padre de APJ
- * Version: 2.0.2611
+ * Version: 2.1.2610
  * Author: Ricardo Seiffert
+ * Cambios en 2.1.2610 (APJ 2.1, PHP 8.5): setFormValues() con un campo
+ * 'datetime-local' en null/'' llamaba strtotime(null) (deprecado) y dejaba
+ * el input en 1969-12-31T21:00:00 - ahora lo deja vacío.
  * Cambios en 2.0.2611 (2): absoluteUrl() usa $this->isHttps() (método
  * protegido de APJCommon, este controlador ya usa ese trait) en vez de la
  * función global isHttps() de init.php, que se retiró - decisión
@@ -411,7 +414,10 @@ class APJController
                 if ($this->fieldTypes[$field] === "checkbox" || $this->fieldTypes[$field] === "radio") {
                     $this->jQ($selector)->prop('checked', (bool) $value);
                 } elseif ($this->fieldTypes[$field] === 'datetime-local') {
-                    $value = date('Y-m-d\TH:i:s', strtotime($value));
+                    // strtotime(null) está deprecado y además devolvía la
+                    // época (1969-12-31) - un valor vacío deja el input vacío.
+                    $time = ($value === null || $value === '') ? false : strtotime($value);
+                    $value = ($time !== false) ? date('Y-m-d\TH:i:s', $time) : '';
                     $this->jQ($selector)->val($value);
                 } elseif ($this->fieldTypes[$field] !== 'file') {
                     $this->jQ($selector)->val($value);

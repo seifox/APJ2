@@ -2,8 +2,13 @@
 /*
  * APJ Base Model that extends APJPDO class<br>
  * Modelo de base que extiende la clase APJPDO
- * Version: 2.0.2610
+ * Version: 2.1.2610
  * Author: Ricardo Seiffert
+ *
+ * Cambios en 2.1.2610 (APJ 2.1, PHP 8.5):
+ * - _values(): 'Extra' de la estructura se pasaba directo a stripos() - una
+ *   estructura escrita a mano con 'Extra' => NULL (o sin la clave) daba
+ *   stripos(null) deprecado / clave inexistente. Ahora se normaliza a string.
  *
  * Cambios en 2.0.2610 (24-ago-2026):
  * - getStructureCode(): el bloque de $this->structure no tenia el guard
@@ -1237,7 +1242,7 @@ class APJModel extends APJPDO
         if (empty($values) && $this->variables) {
             foreach ($this->variables as $column => $val) {
                 if (in_array($column, $this->fields, true)) {
-                    $extra = $this->structure[$column]['Extra'];
+                    $extra = (string) ($this->structure[$column]['Extra'] ?? '');
                     if (stripos($extra, 'GENERATED') !== false) {
                         continue;
                     }
@@ -1250,7 +1255,7 @@ class APJModel extends APJPDO
         } elseif (is_array($values)) {
             foreach ($values as $column => $val) {
                 if (in_array($column, $this->fields, true)) {
-                    $extra = $this->structure[$column]['Extra'];
+                    $extra = (string) ($this->structure[$column]['Extra'] ?? '');
                     if (stripos($extra, 'GENERATED') !== false) {
                         continue;
                     }

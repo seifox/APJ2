@@ -2,8 +2,12 @@
 /**
  * Controls the user session<br>
  * Controla la sesión de usuarios
- * Version: 2.0.2609
+ * Version: 2.1.2610
  * Author: Ricardo Seiffert
+ * Cambios en 2.1.2610 (APJ 2.1, PHP 8.5): basicData()/same() y las cookies
+ * de login leían $_SERVER['HTTP_USER_AGENT']/['REMOTE_ADDR']/['SERVER_NAME']
+ * sin guard - en CLI/cron o con un cliente sin User-Agent daba warning de
+ * clave inexistente + md5(null) deprecado. Ahora usan ?? ''.
  * Cambios en 2.0.2609 (2): la función global isHttps() (init.php) se
  * retiró - reemplazada por el método privado self::isHttps() de esta
  * misma clase (decisión explícita del usuario: prefiere la detección de
@@ -183,8 +187,8 @@ class APJSession
      */
     private static function basicData(): void
     {
-        $_SESSION['IPaddress'] = md5($_SERVER['REMOTE_ADDR']);
-        $_SESSION['userAgent'] = md5($_SERVER['HTTP_USER_AGENT']);
+        $_SESSION['IPaddress'] = md5($_SERVER['REMOTE_ADDR'] ?? '');
+        $_SESSION['userAgent'] = md5($_SERVER['HTTP_USER_AGENT'] ?? '');
         $_SESSION['last_activity'] = time();
     }
 
@@ -200,7 +204,7 @@ class APJSession
         // rota cada pocos minutos quedaban desconectados en plena sesión
         // aunque siguieran en el mismo dispositivo. 14-ago-2026.
         return isset($_SESSION['userAgent']) &&
-            $_SESSION['userAgent'] === md5($_SERVER['HTTP_USER_AGENT']);
+            $_SESSION['userAgent'] === md5($_SERVER['HTTP_USER_AGENT'] ?? '');
     }
 
     /**
@@ -276,7 +280,7 @@ class APJSession
         setcookie($cookieName, $token, [
             'expires'  => time() + ($days * 86400),
             'path'     => '/',
-            'domain'   => $_SERVER['SERVER_NAME'],
+            'domain'   => $_SERVER['SERVER_NAME'] ?? '',
             'secure'   => self::isHttps(),
             'httponly' => true,
             'samesite' => 'Strict',
@@ -313,7 +317,7 @@ class APJSession
         $options = [
             'expires'  => time() - 3600,
             'path'     => '/',
-            'domain'   => $_SERVER['SERVER_NAME'],
+            'domain'   => $_SERVER['SERVER_NAME'] ?? '',
             'secure'   => self::isHttps(),
             'httponly' => true,
             'samesite' => 'Strict',

@@ -4,8 +4,13 @@
  * APJPDOConnection es una implementación singleton para devolver una instancia de PDO
  * Usage: $db = APJPDOConnection::instance('dsn', 'username', 'password');
  * If you assign different arguments, it will return a new connection.
- * Version: 2.0.2412
+ * Version: 2.1.2610
  * Author: Ricardo Seiffert
+ * Cambios en 2.1.2610 (APJ 2.1, PHP 8.5): __wakeup() reemplazado por
+ * __unserialize() - PHP 8.5 marca __sleep()/__wakeup() como obsoletos a
+ * favor de __serialize()/__unserialize() (soft-deprecation: todavía sin
+ * aviso en runtime, pero es el camino a PHP 9). Mismo comportamiento: el
+ * singleton no se puede deserializar.
  */
 namespace APJ;
 use \PDO;
@@ -24,10 +29,10 @@ class APJPDOConnection
 
     private function __clone(): void {}
 
-    public function __wakeup(): void
+    public function __unserialize(array $data): void
     {
         throw new \Exception('Cannot unserialize singleton');
-    }  
+    }
 
     /**
      * Returns a instance of the database connection<br>

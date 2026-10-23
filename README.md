@@ -1,6 +1,6 @@
 # APJ (Asynchronous PHP and JQuery MVC Framework)
 ## APJ: Framework MVC para PHP y JQuery de forma asíncrona
-### Versión: 2.0.2611
+### Versión: 2.1.2610
 ### ¿Que es?
 - Es un Framework para PHP basado en el patrón MVC (Modelo-Vista-Controlador) que utiliza JQuery, enfocado en el intercambio de datos de forma asíncrona con formato JSON, entre el controlador y la vista en el navegador.
 - Permite la inyección de instrucciones JQuery (javascript) desde el mismo controlador en PHP.
@@ -13,7 +13,7 @@
 >En resumen un framework simple pero potente que cubriera mis necesidades en el desarrollo de aplicaciones web con PHP.
 
 ### Requerimientos:
-1. Apache con PHP 8.1 o mayor (XAMPP, LAMP, Appserv u otro)
+1. Apache con PHP 8.5 (probado con PHP 8.5.12; el código sigue siendo compatible desde PHP 8.1) (XAMPP, LAMP, Appserv u otro)
 1. MySQL o MariaDB que tenga PDO e INNODB habilitado (también es posible hacer conexiones con otros tipos de bases de datos con DSN)
 1. Un navegador actualizado compatible con HTML5 (Chrome, Edge, Safari o Firefox)
 
