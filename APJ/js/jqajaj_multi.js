@@ -757,7 +757,7 @@
      * @param {object} options
      * @param {string}   options.url          - URL del controlador PHP       [requerido]
      * @param {number}   options.timeout      - Timeout en ms                 [default: 10000]
-     * @param {string}   options.images       - Ruta a imágenes               [default: 'Libs/APJ/images/']
+     * @param {string}   options.images       - Ruta a imágenes               [default: 'APJ/images/']     
      * @param {string}   options.lang         - Código de idioma base         [default: 'es']
      *                                          Incluidos: es, en, pt, fr, de
      * @param {object}   options.translations - Sobreescritura parcial de textos.
