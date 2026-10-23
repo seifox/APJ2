@@ -5,7 +5,7 @@ module.exports = [
   { t: 'code', x: '<?php\nnamespace Controllers;\nrequire_once("init.php");\n\nuse APJ\\APJController;\nuse APJ\\APJHtmlGen;\nuse Models\\Contactos;\n\nclass Consulta extends APJController\n{\n    private ?Contactos $modeloContactos = null;\n    private ?APJHtmlGen $gen = null;\n\n    public function __construct()\n    {\n        $this->TimeOut = 20000;\n        $this->sessionControl();\n        $this->modeloContactos = new Contactos();\n        $this->gen = new APJHtmlGen();\n        parent::__construct(\'consulta.html\');\n    }\n\n    public function guardar(): void\n    {\n        // llamado desde la vista con APJSubmit(\'formContacto\', \'guardar\')\n    }\n}\n\nnew Consulta();' },
   { t: 'table', head: ['Línea', 'Explicación'], widths: [3300, 5700], rows: [
     ['`namespace Controllers;`', 'Los controladores van en el namespace `Controllers`.'],
-    ['`require_once("init.php");`', 'Carga las constantes, el auto-cargador y `Vendor/autoload.php`.'],
+    ['`require_once("init.php");`', 'Carga las constantes, el auto-cargador y `vendor/autoload.php`.'],
     ['`use ...`', 'Importa las clases del framework y los modelos que usa el controlador.'],
     ['`private ?Contactos $modeloContactos`', 'Una propiedad por cada modelo u objeto auxiliar. Deben **declararse**: desde PHP 8.2, asignar una propiedad no declarada genera un aviso que puede corromper la respuesta.'],
     ['`$this->TimeOut = 20000;`', 'Tiempo máximo de espera de la vista, en milisegundos (por defecto 10000). Con `0` espera sin límite, útil para procesos largos. Se asigna **antes** de `parent::__construct()`.'],
